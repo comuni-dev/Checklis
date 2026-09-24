@@ -13,9 +13,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" />
 
-    <link rel="stylesheet" href="css/style.css?v=1.0.1" />
-    <link rel="stylesheet" href="css/toast.css?v=1.0.1" />
-    <link rel="stylesheet" href="css/dashboard.css?v=1.0.1" />
+    <link rel="stylesheet" href="css/style.css?v=1.0.11" />
+    <link rel="stylesheet" href="css/toast.css?v=1.0.11" />
+    <link rel="stylesheet" href="css/dashboard.css?v=1.0.11" />
 </head>
 <body class="dashboard-body">
 
@@ -47,6 +47,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                     <span>Checklists</span>
                 </a>
+                <a href="#" class="nav-item" data-view="inventario">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+                    <span>Inventario</span>
+                </a>
                 <a href="#" class="nav-item" data-view="reportes">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
                     <span>Reportes</span>
@@ -63,6 +67,7 @@
             </nav>
 
             <div class="sidebar-footer">
+                <div class="sidebar-user-summary"><strong id="sidebarUserName">Usuario</strong><span id="sidebarUserRole">—</span></div>
                 <button id="logoutBtn" class="logout-btn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                     <span>Cerrar sesión</span>
@@ -113,16 +118,6 @@
 
                     <!-- Stats -->
                     <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-icon icon-blue">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                            </div>
-                            <div class="stat-info">
-                                <span class="stat-label">Checklists</span>
-                                <span class="stat-value">0</span>
-                            </div>
-                        </div>
-
                         <div class="stat-card">
                             <div class="stat-icon icon-green">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -196,13 +191,19 @@
                             </div>
                             <ul class="roadmap">
                                 <li><span class="chip chip-soon">En desarrollo</span> Gestión de usuarios y roles</li>
-                                <li><span class="chip chip-soon">En desarrollo</span> Creación de checklists</li>
                                 <li><span class="chip chip-soon">En desarrollo</span> Reportes y estadísticas</li>
                                 <li><span class="chip chip-plan">Planeado</span> Exportar a PDF / Excel</li>
                                 <li><span class="chip chip-plan">Planeado</span> Notificaciones en tiempo real</li>
                             </ul>
                         </div>
                     </div>
+                </div>
+
+                <!-- VISTA: REPORTES -->
+                <div class="view" id="view-reportes">
+                    <div class="section-heading"><div><span class="eyebrow">Centro de información</span><h2>Reportes</h2><p>Consulta el estado del inventario y exporta sus datos.</p></div><div class="report-actions"><button id="exportExcelBtn" class="btn-secondary" type="button">Exportar Excel</button><button id="exportPdfBtn" class="btn-primary" type="button">Exportar PDF</button></div></div>
+                    <div class="report-stats" id="reportStats"></div>
+                    <div class="report-card"><div class="panel-toolbar"><div><h3>Equipos por estado</h3><p>Distribución actual del inventario.</p></div></div><div id="reportStatusChart" class="status-chart"></div></div>
                 </div>
 
                 <!-- VISTA: CHECKLISTS -->
@@ -212,38 +213,56 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                         </div>
                         <h3>Módulo de Checklists</h3>
-                        <p>Aquí podrás crear, asignar y gestionar tus listas de verificación.</p>
-                        <button class="btn-primary" disabled>Crear checklist (próximamente)</button>
+                        <p>Este módulo estará disponible próximamente.</p>
+                        <button class="btn-primary" disabled>Próximamente</button>
                     </div>
                 </div>
 
-                <!-- VISTA: REPORTES -->
-                <div class="view" id="view-reportes">
-                    <div class="empty-state">
-                        <div class="empty-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                <!-- VISTA: INVENTARIO -->
+                <div class="view" id="view-inventario">
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">Estructura operativa</span>
+                            <h2>Inventario y equipos</h2>
+                            <p>Organiza tus sedes, áreas, tipos de equipo y equipos.</p>
                         </div>
-                        <h3>Módulo de Reportes</h3>
-                        <p>Visualiza estadísticas, tendencias y exporta tus datos.</p>
-                        <button class="btn-primary" disabled>Ver reportes (próximamente)</button>
+                    </div>
+                    <div class="inventory-tabs" role="tablist" aria-label="Secciones del inventario">
+                        <button class="inventory-tab active" data-inventory-tab="sedes" type="button">Sedes</button>
+                        <button class="inventory-tab" data-inventory-tab="areas" type="button">Áreas</button>
+                        <button class="inventory-tab" data-inventory-tab="tipos" type="button">Tipos de equipo</button>
+                        <button class="inventory-tab" data-inventory-tab="equipos" type="button">Equipos</button>
+                    </div>
+                    <div class="inventory-panel active" id="inventory-panel-sedes">
+                        <div class="panel-toolbar"><div><h3>Sedes</h3><p>Ubicaciones donde opera tu organización.</p></div><button class="btn-primary inventory-add" data-entity="sede" type="button">+ Nueva sede</button></div><input class="inventory-filter" data-target="sedes" type="search" placeholder="Buscar sede, código o dirección">
+                        <div class="entity-form hidden" id="form-sede"></div><div class="entity-list" id="list-sedes"></div>
+                    </div>
+                    <div class="inventory-panel" id="inventory-panel-areas">
+                        <div class="panel-toolbar"><div><h3>Áreas</h3><p>Cada área pertenece a una sede.</p></div><button class="btn-primary inventory-add" data-entity="area" type="button">+ Nueva área</button></div><input class="inventory-filter" data-target="areas" type="search" placeholder="Buscar área o sede">
+                        <div class="entity-form hidden" id="form-area"></div><div class="entity-list" id="list-areas"></div>
+                    </div>
+                    <div class="inventory-panel" id="inventory-panel-tipos">
+                        <div class="panel-toolbar"><div><h3>Tipos de equipo</h3><p>Define los campos particulares de cada tipo.</p></div><button class="btn-primary inventory-add" data-entity="tipo" type="button">+ Nuevo tipo</button></div><input class="inventory-filter" data-target="tipos" type="search" placeholder="Buscar tipo de equipo">
+                        <div class="entity-form hidden" id="form-tipo"></div><div class="entity-list" id="list-tipos"></div>
+                    </div>
+                    <div class="inventory-panel" id="inventory-panel-equipos">
+                        <div class="panel-toolbar"><div><h3>Equipos</h3><p>Registra equipos y completa sus datos específicos.</p></div><button class="btn-primary inventory-add" data-entity="equipo" type="button">+ Nuevo equipo</button></div><input class="inventory-filter" data-target="equipos" type="search" placeholder="Buscar equipo, código, área o sede">
+                        <div class="entity-form hidden" id="form-equipo"></div><div class="entity-list" id="list-equipos"></div>
                     </div>
                 </div>
 
                 <!-- VISTA: USUARIOS -->
                 <div class="view" id="view-usuarios">
-                    <div class="empty-state">
-                        <div class="empty-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/></svg>
-                        </div>
-                        <h3>Gestión de Usuarios</h3>
-                        <p>Administra usuarios, roles y permisos del sistema.</p>
-                        <button class="btn-primary" disabled>Administrar (próximamente)</button>
-                    </div>
+                    <div class="section-heading"><div><span class="eyebrow">Control de acceso</span><h2>Usuarios y roles</h2><p>Gestiona permisos, estado y acceso por sede.</p></div><button class="btn-primary" id="newUserBtn" type="button">+ Nuevo usuario</button></div>
+                    <div class="list-toolbar"><input id="userSearch" type="search" placeholder="Buscar por nombre o correo"><select id="userRoleFilter"><option value="">Todos los roles</option></select><select id="userStatusFilter"><option value="">Todos los estados</option><option value="Activo">Activos</option><option value="Inactivo">Inactivos</option></select></div>
+                    <div class="entity-list" id="usersList"></div>
                 </div>
 
                 <!-- VISTA: CONFIG -->
                 <div class="view" id="view-config">
-                    <div class="empty-state">
+                    <div class="section-heading"><div><span class="eyebrow">Organización</span><h2>Asignación de sedes</h2><p>Define en qué sedes puede trabajar cada persona.</p></div></div>
+                    <div class="assignment-card"><label>Persona<select id="assignmentUser"></select></label><div id="assignmentSites" class="site-checks"></div><button class="btn-primary" id="saveAssignmentBtn" type="button">Guardar asignación</button></div>
+                    <div class="empty-state hidden">
                         <div class="empty-icon">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                         </div>
@@ -258,18 +277,20 @@
     </div>
 
     <div id="toastContainer" class="toast-container"></div>
+    <div id="detailModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="detailModalTitle"><div class="modal-card"><div class="modal-header"><h3 id="detailModalTitle">Detalle</h3><button id="closeDetailModal" class="modal-close" type="button" aria-label="Cerrar">×</button></div><div id="detailModalBody"></div></div></div>
 
     <script type="importmap">
         {
             "imports": {
                 "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-                "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"
+                "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+                "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
             }
         }
     </script>
 
-    <script type="module" src="js/version-check.js?v=1.0.1"></script>
-    <script type="module" src="js/firebase-config.js?v=1.0.1"></script>
-    <script type="module" src="js/dashboard.js?v=1.0.1"></script>
+    <script type="module" src="js/version-check.js?v=1.0.11"></script>
+    <script type="module" src="js/firebase-config.js?v=1.0.11"></script>
+    <script type="module" src="js/dashboard.js?v=1.0.11"></script>
 </body>
 </html>

@@ -1,0 +1,106 @@
+/* ============================================================
+   FONDO DECORATIVO CON ICONOS FLOTANTES
+   Fondo claro + iconos oscuros
+   ============================================================ */
+
+/* Contenedor que envuelve todos los iconos de fondo */
+.login-bg-icons {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+
+    /* Degradado claro (blanco → gris muy suave) */
+    background: linear-gradient(135deg, #F7F9FC 0%, #E8EEF5 100%);
+}
+
+/* Brillo radial suave para dar profundidad (opcional) */
+.login-bg-icons::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(77, 98, 127, 0.06) 0%, transparent 45%),
+        radial-gradient(circle at 80% 80%, rgba(77, 52, 47, 0.05) 0%, transparent 45%);
+    pointer-events: none;
+}
+
+/* Cada icono individual — color OSCURO */
+.bg-icon {
+    position: absolute;
+    color: rgba(45, 42, 53, 0.18);   /* ← gris oscuro con 18% de opacidad */
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    will-change: transform, opacity;
+    user-select: none;
+    z-index: 1;
+}
+
+.bg-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    filter: drop-shadow(0 2px 4px rgba(45, 42, 53, 0.05));
+}
+
+/* ---------- ANIMACIONES ---------- */
+
+@keyframes floatIcon {
+    0%   { transform: translate3d(0, 0, 0) rotate(0deg); }
+    25%  { transform: translate3d(18px, -28px, 0) rotate(4deg); }
+    50%  { transform: translate3d(-14px, -12px, 0) rotate(-3deg); }
+    75%  { transform: translate3d(12px, -32px, 0) rotate(5deg); }
+    100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+
+@keyframes rotateSlow {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+@keyframes pulseIcon {
+    0%, 100% { opacity: 0.14; }
+    50%      { opacity: 0.32; }
+}
+
+@keyframes floatVertical {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-35px); }
+}
+
+@keyframes floatHorizontal {
+    0%, 100% { transform: translateX(0); }
+    50%      { transform: translateX(30px); }
+}
+
+/* ---------- VARIANTES DE ANIMACIÓN ---------- */
+.bg-icon.float       { animation-name: floatIcon; }
+.bg-icon.rotate      { animation-name: rotateSlow; animation-timing-function: linear; }
+.bg-icon.pulse       { animation-name: pulseIcon; }
+.bg-icon.float-vert  { animation-name: floatVertical; }
+.bg-icon.float-horiz { animation-name: floatHorizontal; }
+
+/* El contenedor del login debe estar POR ENCIMA del fondo */
+.login-container {
+    position: relative;
+    z-index: 10;
+}
+
+/* ---------- RESPONSIVE ---------- */
+@media (max-width: 768px) {
+    .bg-icon {
+        opacity: 0.85;
+    }
+
+    .bg-icon.optional {
+        display: none;
+    }
+}
+
+/* ---------- ACCESIBILIDAD ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .bg-icon {
+        animation: none !important;
+    }
+}

@@ -13,8 +13,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" />
 
-    <link rel="stylesheet" href="css/style.css?v=1.0.1" />
-    <link rel="stylesheet" href="css/toast.css?v=1.0.1" />
+    <link rel="stylesheet" href="css/style.css?v=1.0.8" />
+    <link rel="stylesheet" href="css/toast.css?v=1.0.8" />
+    <link rel="stylesheet" href="css/login-background.css?v=1.0.8" />
 </head>
 <body>
     <div class="login-container">
@@ -56,20 +57,22 @@
         </div>
     </div>
 
-    <!-- Contenedor de toasts (se crea por JS si no existe, pero lo dejamos por claridad) -->
+    <!-- Contenedor de toasts -->
     <div id="toastContainer" class="toast-container"></div>
 
     <script type="importmap">
         {
             "imports": {
                 "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-                "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"
+                "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+                "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
             }
         }
     </script>
 
-    <script type="module" src="js/version-check.js?v=1.0.1"></script>
-    <script type="module" src="js/firebase-config.js?v=1.0.1"></script>
-    <script type="module" src="js/app.js?v=1.0.1"></script>
+    <script type="module" src="js/version-check.js?v=1.0.8"></script>
+    <script type="module" src="js/login-background.js?v=1.0.8"></script>
+    <script type="module" src="js/firebase-config.js?v=1.0.8"></script>
+    <script type="module" src="js/app.js?v=1.0.8"></script>
 </body>
 </html>

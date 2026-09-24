@@ -256,3 +256,18 @@ body {
         font-size: 1.8rem;
     }
 }
+
+/* ===== PALETA COMPARTIDA CON EL DASHBOARD ===== */
+body { background: #ffffff; color: #174d3a; }
+.login-card { background: #ffffff; border: 1px solid #b9ddc6; box-shadow: 0 20px 45px -25px rgba(23, 77, 58, 0.35); }
+.login-header h1 { color: #174d3a; }
+.login-header p, .login-footer { color: #387a5d; }
+.input-group label { color: #174d3a; }
+.input-group input { background: #ffffff; border-color: #9fceb0; color: #174d3a; }
+.input-group input:focus { border-color: #f28c28; box-shadow: 0 0 0 4px rgba(242, 140, 40, 0.16); }
+.input-group input::placeholder { color: #72a187; }
+.toggle-password, #forgotPassword { color: #2f7658; }
+.toggle-password:hover, #forgotPassword:hover { color: #d86f12; }
+#loginButton { background: #f28c28; color: #ffffff; }
+#loginButton:hover { background: #d86f12; box-shadow: 0 8px 16px -6px rgba(242, 140, 40, 0.45); }
+.login-footer span { background: #edf8f1; color: #174d3a; }
