@@ -65,13 +65,14 @@ const viewTitle     = document.getElementById('viewTitle');
 const viewSubtitle  = document.getElementById('viewSubtitle');
 const navItems      = document.querySelectorAll('.nav-item');
 
-const inventoryState = { userId: null, workspaceId: 'default', sedes: [], areas: [], tipos: [], equipos: [], users: [], roles: [] };
+const inventoryState = { userId: null, workspaceId: 'default', sedes: [], areas: [], tipos: [], equipos: [], users: [], roles: [], checklists: [], chequeos: [], asistencias: [] };
+let selectedReportAreaId = '';
 const INVENTORY_KEY = 'checklis_workspace_';
-const CLOUDINARY_CONFIG = { cloudName: '', uploadPreset: '' };
+const CLOUDINARY_CONFIG = { cloudName: 'd1apmqkf', uploadPreset: 'checklis' };
 const DEFAULT_ROLES = [
     { id: 'administrador', nombre: 'Administrador', permissions: ['inicio', 'checklists', 'inventario', 'reportes', 'usuarios', 'config'] },
-    { id: 'supervisor', nombre: 'Supervisor', permissions: ['inicio', 'inventario', 'reportes', 'config'] },
-    { id: 'inspector', nombre: 'Inspector', permissions: ['inicio', 'inventario'] }
+    { id: 'supervisor', nombre: 'Supervisor', permissions: ['inicio', 'checklists', 'inventario', 'reportes', 'config'] },
+    { id: 'inspector', nombre: 'Inspector', permissions: ['inicio', 'checklists'] }
 ];
 
 // Reflejar versión
@@ -141,16 +142,23 @@ function renderUser(user) {
    ============================================================ */
 const VIEW_META = {
     inicio:     { title: 'Inicio',        subtitle: 'Resumen general de tu cuenta' },
-    checklists: { title: 'Checklists',    subtitle: 'Módulo próximamente disponible' },
+    checklists: { title: 'Checklists',    subtitle: 'Control operativo y tareas del día' },
     inventario: { title: 'Inventario',    subtitle: 'Sedes, áreas, tipos y equipos' },
-    reportes:   { title: 'Reportes',      subtitle: 'Estadísticas y exportación' },
+    reportes:   { title: 'Reportes',      subtitle: 'Chequeos y asistencia por sede' },
     usuarios:   { title: 'Usuarios',      subtitle: 'Gestión de usuarios y roles' },
     config:     { title: 'Configuración', subtitle: 'Preferencias de la aplicación' }
 };
 
 function makeId() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
-function inventorySnapshot() { return { sedes: inventoryState.sedes, areas: inventoryState.areas, tipos: inventoryState.tipos, equipos: inventoryState.equipos, users: inventoryState.users, roles: inventoryState.roles }; }
+function normalizeRoles(roles) {
+    return roles.map(role => {
+        const normalizedRole = role.id === 'tecnico' ? { ...role, id: 'inspector', nombre: 'Inspector' } : role;
+        const builtInRole = DEFAULT_ROLES.find(item => item.id === normalizedRole.id);
+        return builtInRole ? { ...normalizedRole, nombre: builtInRole.nombre, permissions: [...builtInRole.permissions] } : normalizedRole;
+    });
+}
+function inventorySnapshot() { return { sedes: inventoryState.sedes, areas: inventoryState.areas, tipos: inventoryState.tipos, equipos: inventoryState.equipos, users: inventoryState.users, roles: inventoryState.roles, checklists: inventoryState.checklists, chequeos: inventoryState.chequeos, asistencias: inventoryState.asistencias }; }
 async function saveInventory() {
     const snapshot = inventorySnapshot(); localStorage.setItem(INVENTORY_KEY + inventoryState.workspaceId, JSON.stringify(snapshot));
     try { await setDoc(doc(db, 'workspaces', inventoryState.workspaceId), snapshot); } catch (error) { console.warn('Inventario guardado localmente; Firestore no disponible:', error); }
@@ -159,14 +167,14 @@ async function loadInventory(userId, authUser = {}) {
     inventoryState.userId = userId;
     inventoryState.sedes = []; inventoryState.areas = []; inventoryState.tipos = []; inventoryState.equipos = []; inventoryState.users = []; inventoryState.roles = [];
     try { Object.assign(inventoryState, JSON.parse(localStorage.getItem(INVENTORY_KEY + inventoryState.workspaceId) || localStorage.getItem('checklis_inventory_' + userId) || '{}')); } catch { showToast('No se pudieron leer los datos guardados.', 'error'); }
-    ['sedes', 'areas', 'tipos', 'equipos', 'users', 'roles'].forEach(key => { if (!Array.isArray(inventoryState[key])) inventoryState[key] = []; });
+    ['sedes', 'areas', 'tipos', 'equipos', 'users', 'roles', 'checklists', 'chequeos', 'asistencias'].forEach(key => { if (!Array.isArray(inventoryState[key])) inventoryState[key] = []; });
     if (!inventoryState.roles.length) inventoryState.roles = DEFAULT_ROLES.map(role => ({ ...role, permissions: [...role.permissions] }));
     inventoryState.tipos.forEach(item => { if (!Array.isArray(item.campos)) item.campos = []; });
-    inventoryState.roles = inventoryState.roles.map(role => role.id === 'tecnico' ? { ...role, id: 'inspector', nombre: 'Inspector' } : role).map(role => role.id === 'administrador' && !role.permissions.includes('checklists') ? { ...role, permissions: [...role.permissions, 'checklists'] } : role);
+    inventoryState.roles = normalizeRoles(inventoryState.roles);
     inventoryState.users = inventoryState.users.map(user => user.roleId === 'tecnico' ? { ...user, roleId: 'inspector' } : user);
     if (!inventoryState.users.some(item => item.uid === userId)) inventoryState.users.push({ id: makeId(), uid: userId, nombre: authUser.email || userId, email: authUser.email || '', roleId: inventoryState.users.length ? 'inspector' : 'administrador', estado: inventoryState.users.length ? 'Inactivo' : 'Activo', sedeIds: [] });
     try { const remote = await getDoc(doc(db, 'workspaces', inventoryState.workspaceId)); if (remote.exists()) { Object.assign(inventoryState, remote.data()); localStorage.setItem(INVENTORY_KEY + inventoryState.workspaceId, JSON.stringify(inventorySnapshot())); } } catch (error) { console.warn('Usando inventario local:', error); }
-    inventoryState.roles = inventoryState.roles.map(role => role.id === 'tecnico' ? { ...role, id: 'inspector', nombre: 'Inspector' } : role).map(role => role.id === 'administrador' && !role.permissions.includes('checklists') ? { ...role, permissions: [...role.permissions, 'checklists'] } : role);
+    inventoryState.roles = normalizeRoles(inventoryState.roles);
     inventoryState.users = inventoryState.users.map(user => user.roleId === 'tecnico' ? { ...user, roleId: 'inspector' } : user);
     const current = inventoryState.users.find(item => item.uid === userId); if (current) { current.email = current.email || authUser.email || ''; current.nombre = current.nombre === userId ? (authUser.email || userId) : current.nombre; }
     if (!current || current.estado !== 'Activo') showToast('Tu cuenta aún no tiene acceso activo en esta organización.', 'warning');
@@ -186,8 +194,278 @@ function renderInventory() {
     document.getElementById('list-areas').innerHTML = areas.length ? areas.map(item => `<article class="entity-row"><div><strong>${escapeHtml(item.nombre)}</strong><span>${escapeHtml(sedeName(item.sedeId))} · ${escapeHtml(item.descripcion || 'Sin descripción')} · ${item.chequeable === false ? 'No chequeable' : 'Chequeable'}</span></div>${entityActions('area', item.id)}</article>`).join('') : emptyEntity(inventoryState.areas.length ? 'No hay áreas con ese filtro.' : 'Aún no hay áreas.');
     document.getElementById('list-tipos').innerHTML = tipos.length ? tipos.map(item => `<article class="entity-row"><div><strong>${escapeHtml(item.nombre)}</strong><span>${item.campos.length} campo(s): ${item.campos.map(field => escapeHtml(field.nombre)).join(', ') || 'solo campos generales'}</span></div>${entityActions('tipo', item.id)}</article>`).join('') : emptyEntity(inventoryState.tipos.length ? 'No hay tipos con ese filtro.' : 'Aún no hay tipos de equipo.');
     document.getElementById('list-equipos').innerHTML = equipos.length ? equipos.map(item => `<article class="entity-row"><div><strong>${escapeHtml(item.nombre)}</strong><span>${escapeHtml(tipoName(item.tipoId))} · ${escapeHtml(sedeName(item.sedeId))} / ${escapeHtml(areaName(item.areaId))} · ${escapeHtml(item.estado)}${item.chequeable ? ' · Chequeable' : ''}</span></div>${entityActions('equipo', item.id)}</article>`).join('') : emptyEntity(inventoryState.equipos.length ? 'No hay equipos con ese filtro.' : 'Aún no hay equipos.');
-    renderUsers(); renderAssignments(); renderReports();
+    renderUsers(); renderAssignments(); renderReports(); renderChecklistModule();
 }
+
+function getLatestChequeoForArea(areaId, sedeId) {
+    return [...inventoryState.chequeos]
+        .filter(item => item.areaId === areaId && item.sedeId === sedeId)
+        .sort((a, b) => new Date(b.fechaHora) - new Date(a.fechaHora))[0] || null;
+}
+
+function localDayKey(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function getAreaChequeoAction(areaId, sedeId) {
+    const today = localDayKey(new Date());
+    const latest = [...inventoryState.chequeos]
+        .filter(item => item.areaId === areaId && item.sedeId === sedeId && item.realizadoPor === inventoryState.userId && localDayKey(item.fechaHora) === today)
+        .sort((a, b) => new Date(b.fechaHora) - new Date(a.fechaHora))[0] || null;
+    if (!latest) {
+        return { type: 'entrada', allowed: true, label: 'Guardar entrada', hint: 'Primera revisión del día.' };
+    }
+
+    const elapsedHours = (Date.now() - new Date(latest.fechaHora).getTime()) / (1000 * 60 * 60);
+    if (latest.tipo === 'salida') {
+        return { type: 'salida', allowed: false, label: 'Día completado', hint: 'La entrada y la salida de hoy ya quedaron registradas.' };
+    }
+
+    if (elapsedHours >= 1) {
+        return { type: 'salida', allowed: true, label: 'Guardar salida', hint: `Entrada registrada: ${formatDate(latest.fechaHora)}. Ya puede registrar la salida.` };
+    }
+
+    const salidaDisponible = new Date(new Date(latest.fechaHora).getTime() + 60 * 60 * 1000);
+    return { type: 'salida', allowed: false, label: 'Esperar salida', hint: `Entrada registrada: ${formatDate(latest.fechaHora)}. Podrá registrar la salida desde ${formatDate(salidaDisponible.toISOString())}.` };
+}
+
+function readImageAsDataUrl(file) {
+    if (!file) return Promise.resolve('');
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('No se pudo leer la imagen seleccionada.'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function renderChecklistModule() {
+    const board = document.getElementById('checklistBoard');
+    const sedeSelect = document.getElementById('checklistSede');
+    const metaBox = document.getElementById('checklistMetaBox');
+    if (!board || !sedeSelect || !metaBox) return;
+
+    const selectedSedeId = sedeSelect.value || '';
+    const sedes = inventoryState.sedes || [];
+    sedeSelect.innerHTML = '<option value="">Selecciona una sede</option>' + sedes.map(site => `<option value="${site.id}" ${site.id === selectedSedeId ? 'selected' : ''}>${escapeHtml(site.nombre)}</option>`).join('');
+    if (!selectedSedeId) {
+        metaBox.textContent = 'Sin sede seleccionada';
+        board.innerHTML = sedes.length
+            ? '<div class="entity-empty checklist-empty">Selecciona una sede para revisar los equipos chequeables.</div>'
+            : '<div class="entity-empty checklist-empty">Aún no hay sedes creadas. <button type="button" class="btn-primary checklist-go-inventory">Crear primera sede</button></div>';
+        return;
+    }
+
+    const selectedSede = sedes.find(site => site.id === selectedSedeId);
+    const areas = (inventoryState.areas || []).filter(area => area.sedeId === selectedSedeId && area.chequeable !== false);
+    const summaryLabel = selectedSede ? `${selectedSede.nombre} · ${areas.length} área(s)` : 'Sede seleccionada';
+    metaBox.textContent = summaryLabel;
+
+    if (!areas.length) {
+        board.innerHTML = '<div class="entity-empty checklist-empty">No hay áreas chequeables registradas para esta sede.</div>';
+        return;
+    }
+
+    board.innerHTML = areas.map(area => {
+        const action = getAreaChequeoAction(area.id, selectedSedeId);
+        const last = getLatestChequeoForArea(area.id, selectedSedeId);
+        const equipmentCount = (inventoryState.equipos || []).filter(equipo => equipo.sedeId === selectedSedeId && equipo.areaId === area.id && equipo.chequeable !== false).length;
+
+        return `
+            <button class="checklist-area-card" type="button" data-checklist-area="${area.id}" data-sede-id="${selectedSedeId}">
+                <span class="checklist-area-icon">⌂</span>
+                <span class="checklist-area-content">
+                    <strong>${escapeHtml(area.nombre)}</strong>
+                    <span>${equipmentCount} equipo(s) chequeable(s)</span>
+                    <small>${last ? `Último chequeo: ${formatDate(last.fechaHora)}` : 'Sin chequeo registrado'}</small>
+                </span>
+                <span class="checklist-area-action">${escapeHtml(action.label.replace('Guardar ', ''))} <span aria-hidden="true">›</span></span>
+            </button>
+        `;
+    }).join('');
+}
+
+function renderChequeoRecords(records) {
+    return groupChequeos(records).map(group => {
+        const record = group.latest;
+        const siteName = record.sedeNombre || inventoryState.sedes.find(site => site.id === record.sedeId)?.nombre || 'Sede eliminada';
+        const areaName = record.areaNombre || inventoryState.areas.find(area => area.id === record.areaId)?.nombre || 'Área eliminada';
+        const userName = inventoryState.users.find(user => user.uid === record.realizadoPor)?.nombre || record.realizadoPor || 'Usuario';
+        return `
+            <article class="checklist-history-item">
+                <div class="checklist-history-heading">
+                    <strong>${escapeHtml(siteName)} · ${escapeHtml(areaName)}</strong>
+                    <time datetime="${escapeHtml(record.fechaHora)}">${escapeHtml(formatDate(record.fechaHora))}</time>
+                </div>
+                <span class="checklist-history-user">Chequeo de ${escapeHtml(userName)}</span>
+                <div class="checklist-history-phases">${renderChequeoPhase('Entrada', group.entrada)}${renderChequeoPhase('Salida', group.salida)}</div>
+            </article>
+        `;
+    }).join('');
+}
+
+function groupChequeos(records) {
+    const groups = new Map();
+    records.forEach(record => {
+        const day = localDayKey(record.fechaHora);
+        const key = [record.sedeId, record.areaId, record.realizadoPor, day].join('|');
+        if (!groups.has(key)) groups.set(key, { entrada: null, salida: null, latest: record });
+        const group = groups.get(key);
+        const phase = record.tipo === 'salida' ? 'salida' : 'entrada';
+        if (!group[phase] || new Date(record.fechaHora) > new Date(group[phase].fechaHora)) group[phase] = record;
+        if (new Date(record.fechaHora) > new Date(group.latest.fechaHora)) group.latest = record;
+    });
+    return [...groups.values()].sort((a, b) => new Date(b.latest.fechaHora) - new Date(a.latest.fechaHora));
+}
+
+function renderChequeoPhase(label, record) {
+    if (!record) return `<section class="checklist-history-phase pending"><strong>${label}</strong><span>Pendiente</span></section>`;
+    const equipmentRows = (record.equipos || []).map(equipment => `
+        <li><strong>${escapeHtml(equipment.nombre)}</strong><span>${escapeHtml(equipment.estado || 'Sin estado')}${equipment.observacion ? ` · ${escapeHtml(equipment.observacion)}` : ''}</span></li>
+    `).join('');
+    return `
+        <section class="checklist-history-phase completed">
+            <div class="checklist-history-phase-heading"><strong>${label}</strong><span>Registrada · ${escapeHtml(formatDate(record.fechaHora))}</span></div>
+            ${record.observaciones ? `<p>${escapeHtml(record.observaciones)}</p>` : ''}
+            ${equipmentRows ? `<ul>${equipmentRows}</ul>` : ''}
+        </section>
+    `;
+}
+
+function showAreaChequeoModal(sedeId, areaId) {
+    const area = inventoryState.areas.find(item => item.id === areaId);
+    const selectedSede = inventoryState.sedes.find(item => item.id === sedeId);
+    if (!area || !selectedSede) return;
+
+    const equipments = (inventoryState.equipos || []).filter(equipo => equipo.sedeId === sedeId && equipo.areaId === areaId && equipo.chequeable !== false);
+    const action = getAreaChequeoAction(areaId, sedeId);
+    const modal = document.getElementById('detailModal');
+    const body = document.getElementById('detailModalBody');
+    modal.querySelector('.modal-card')?.classList.add('checklist-modal-wide');
+    document.getElementById('detailModalTitle').textContent = `Chequeo · ${area.nombre}`;
+
+    body.innerHTML = `
+        <form class="checklist-form-area checklist-modal-form" data-sede-id="${sedeId}" data-area-id="${areaId}">
+            <div class="checklist-modal-intro">
+                <strong>${escapeHtml(selectedSede.nombre)} · ${escapeHtml(area.nombre)}</strong>
+                <span>${escapeHtml(action.hint)}</span>
+            </div>
+            <div class="checklist-equipment">
+                ${equipments.length ? equipments.map(equipo => `
+                    <div class="checklist-equipment-row">
+                        <div>
+                            <strong>${escapeHtml(equipo.nombre)}</strong>
+                            <span class="checklist-meta">${escapeHtml(equipo.codigo || 'Sin código')}</span>
+                        </div>
+                        <label>
+                            <span class="checklist-label">Estado del equipo</span>
+                            <select name="equipoEstado_${equipo.id}">
+                                <option value="Optimo">Óptimo</option>
+                                <option value="Regular">Regular</option>
+                                <option value="Defectuoso">Defectuoso</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span class="checklist-label">Observación del equipo</span>
+                            <textarea name="equipoObs_${equipo.id}" placeholder="Escribe la observación de este equipo..."></textarea>
+                        </label>
+                        <label>
+                            <span class="checklist-label">Foto (opcional)</span>
+                            <input name="equipoImage_${equipo.id}" type="file" accept="image/*">
+                        </label>
+                    </div>
+                `).join('') : '<div class="entity-empty">No hay equipos chequeables en esta área.</div>'}
+            </div>
+            <label>
+                <span class="checklist-label">Observación general del área</span>
+                <textarea name="observaciones" placeholder="Agrega una observación general..."></textarea>
+            </label>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary close-modal">Cancelar</button>
+                <button type="submit" class="btn-primary" ${action.allowed ? '' : 'disabled'}>${escapeHtml(action.label)}</button>
+            </div>
+        </form>
+    `;
+
+    modal.classList.remove('hidden');
+    body.querySelector('.close-modal').addEventListener('click', closeDetailModal);
+    body.querySelector('form').addEventListener('submit', handleChecklistSubmit);
+}
+
+async function handleChecklistSubmit(event) {
+    const form = event.target.closest('.checklist-form-area');
+    if (!form) return;
+    event.preventDefault();
+
+    const sedeId = form.dataset.sedeId;
+    const areaId = form.dataset.areaId;
+    const action = getAreaChequeoAction(areaId, sedeId);
+    if (!action.allowed) {
+        showToast(action.hint, 'warning');
+        return;
+    }
+
+    const submitButton = form.querySelector('[type="submit"]');
+    submitButton.disabled = true;
+
+    try {
+        const area = inventoryState.areas.find(item => item.id === areaId);
+        const selectedSede = inventoryState.sedes.find(item => item.id === sedeId);
+        const equipments = (inventoryState.equipos || []).filter(equipo => equipo.sedeId === sedeId && equipo.areaId === areaId && equipo.chequeable !== false);
+
+        const chequeoEquipos = await Promise.all(equipments.map(async (equipo) => {
+            const estado = form.elements[`equipoEstado_${equipo.id}`]?.value || 'Operativo';
+            const observacion = form.elements[`equipoObs_${equipo.id}`]?.value?.trim() || '';
+            const imageFile = form.querySelector(`[name="equipoImage_${equipo.id}"]`)?.files?.[0];
+            const foto = imageFile ? await readImageAsDataUrl(imageFile) : '';
+
+            return { equipoId: equipo.id, nombre: equipo.nombre, estado, observacion, foto };
+        }));
+
+        const record = {
+            id: makeId(),
+            sedeId,
+            sedeNombre: selectedSede?.nombre || 'Sede',
+            areaId,
+            tipo: action.type,
+            fechaHora: new Date().toISOString(),
+            observaciones: form.elements.observaciones?.value?.trim() || '',
+            realizadoPor: inventoryState.userId || 'local',
+            areaNombre: area?.nombre || 'Área',
+            equipos: chequeoEquipos
+        };
+        inventoryState.chequeos.push(record);
+
+        try {
+            await saveInventory();
+        } catch (error) {
+            inventoryState.chequeos = inventoryState.chequeos.filter(item => item.id !== record.id);
+            throw error;
+        }
+
+        renderChecklistModule();
+        renderReports();
+        closeDetailModal();
+        showToast(`${action.type === 'entrada' ? 'Entrada' : 'Salida'} registrada en ${area?.nombre || 'el área'}.`, 'success');
+    } catch (error) {
+        console.error('No se pudo guardar el chequeo:', error);
+        showToast('No se pudo guardar el chequeo. Intenta de nuevo.', 'error');
+        submitButton.disabled = false;
+    }
+}
+
+function handleChecklistAction(event) {
+    const areaButton = event.target.closest('[data-checklist-area]');
+    if (!areaButton) return;
+    showAreaChequeoModal(areaButton.dataset.sedeId, areaButton.dataset.checklistArea);
+}
+
+function handleChecklistToggle() {
+    return null;
+}
+
 function showInventoryForm(entity, id = '') {
     const collection = `${entity}s`; const current = id ? inventoryState[collection].find(item => item.id === id) : null;
     const form = document.getElementById(`form-${entity}`); const value = key => escapeHtml(current?.[key] || ''); let fields = '';
@@ -230,8 +508,8 @@ function renderUsers() {
 }
 function showUserModal(id = '') {
     const current = inventoryState.users.find(user => user.id === id); const modal = document.getElementById('detailModal'); const body = document.getElementById('detailModalBody'); document.getElementById('detailModalTitle').textContent = id ? 'Editar usuario' : 'Nuevo usuario';
-    body.innerHTML = `<form id="userForm"><div class="form-grid"><label>Nombre<input name="nombre" required value="${escapeHtml(current?.nombre || '')}" placeholder="Nombre completo"></label><label>Correo<input name="email" type="email" required value="${escapeHtml(current?.email || '')}" placeholder="persona@empresa.com"></label>${id ? '' : '<label>Contraseña inicial<input name="password" type="password" minlength="6" required placeholder="Mínimo 6 caracteres"></label>'}<label>Rol<select name="roleId" required>${inventoryState.roles.map(role => `<option value="${role.id}" ${role.id === (current?.roleId || 'inspector') ? 'selected' : ''}>${escapeHtml(role.nombre)} · ${role.permissions.length} módulos</option>`).join('')}</select></label><label>Estado<select name="estado"><option ${current?.estado !== 'Inactivo' ? 'selected' : ''}>Activo</option><option ${current?.estado === 'Inactivo' ? 'selected' : ''}>Inactivo</option></select></label></div><div class="form-actions"><button type="button" class="btn-secondary close-modal">Cancelar</button><button class="btn-primary" type="submit">${id ? 'Guardar cambios' : 'Crear usuario'}</button></div></form>`;
-    modal.classList.remove('hidden'); body.querySelector('.close-modal').addEventListener('click', closeDetailModal); body.querySelector('form').addEventListener('submit', async event => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries()); let uid = current?.uid || ''; if (!id) { try { const credential = await createUserWithEmailAndPassword(provisioningAuth, data.email, data.password); uid = credential.user.uid; await signOutProvisioning(provisioningAuth); } catch (error) { showToast(error.code === 'auth/email-already-in-use' ? 'Ese correo ya tiene una cuenta.' : 'No se pudo crear la cuenta Firebase.', 'error'); return; } } delete data.password; const record = { ...(current || {}), id: current?.id || makeId(), uid, ...data, sedeIds: current?.sedeIds || [] }; const index = inventoryState.users.findIndex(user => user.id === record.id); if (index >= 0) inventoryState.users[index] = record; else inventoryState.users.push(record); saveInventory(); renderInventory(); closeDetailModal(); showToast('Usuario guardado.', 'success'); });
+    body.innerHTML = `<form id="userForm"><div class="form-grid"><label>Nombre<input name="nombre" required value="${escapeHtml(current?.nombre || '')}" placeholder="Nombre completo"></label><label>Correo<input name="email" type="email" required value="${escapeHtml(current?.email || '')}" placeholder="persona@empresa.com"></label>${id ? '' : '<label>Contraseña inicial<input name="password" type="password" minlength="6" required placeholder="Mínimo 6 caracteres"></label>'}<label>Rol<select name="roleId" required>${inventoryState.roles.map(role => `<option value="${role.id}" ${role.id === (current?.roleId || 'inspector') ? 'selected' : ''}>${escapeHtml(role.nombre)} · ${role.permissions.length} módulos</option>`).join('')}</select></label><label>Estado<select name="estado"><option ${current?.estado !== 'Inactivo' ? 'selected' : ''}>Activo</option><option ${current?.estado === 'Inactivo' ? 'selected' : ''}>Inactivo</option></select></label><label class="full">Firma del usuario<input name="signatureFile" type="file" accept="image/*"><input name="signatureUrl" type="hidden" value="${escapeHtml(current?.signatureUrl || '')}"></label></div><div class="form-actions"><button type="button" class="btn-secondary close-modal">Cancelar</button><button class="btn-primary" type="submit">${id ? 'Guardar cambios' : 'Crear usuario'}</button></div></form>`;
+    modal.classList.remove('hidden'); body.querySelector('.close-modal').addEventListener('click', closeDetailModal); body.querySelector('form').addEventListener('submit', async event => { event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form).entries()); let uid = current?.uid || ''; const signatureFile = form.querySelector('[name="signatureFile"]')?.files?.[0]; if (signatureFile) { try { data.signatureUrl = await uploadToCloudinary(signatureFile); } catch (error) { showToast(error.message, 'warning'); return; } } if (!id) { try { const credential = await createUserWithEmailAndPassword(provisioningAuth, data.email, data.password); uid = credential.user.uid; await signOutProvisioning(provisioningAuth); } catch (error) { showToast(error.code === 'auth/email-already-in-use' ? 'Ese correo ya tiene una cuenta.' : 'No se pudo crear la cuenta Firebase.', 'error'); return; } } delete data.password; delete data.signatureFile; const record = { ...(current || {}), id: current?.id || makeId(), uid, ...data, sedeIds: current?.sedeIds || [] }; const index = inventoryState.users.findIndex(user => user.id === record.id); if (index >= 0) inventoryState.users[index] = record; else inventoryState.users.push(record); saveInventory(); renderInventory(); closeDetailModal(); showToast('Usuario guardado.', 'success'); });
 }
 function renderAssignments() {
     const userSelect = document.getElementById('assignmentUser'); const sites = document.getElementById('assignmentSites'); if (!userSelect || !sites) return;
@@ -239,33 +517,143 @@ function renderAssignments() {
     sites.innerHTML = inventoryState.sedes.length ? inventoryState.sedes.map(site => `<label class="site-check"><input type="checkbox" value="${site.id}" ${user?.sedeIds?.includes(site.id) ? 'checked' : ''}>${escapeHtml(site.nombre)}</label>`).join('') : emptyEntity('Crea una sede para poder asignarla.');
 }
 function renderReports() {
-    const stats = document.getElementById('reportStats'); const chart = document.getElementById('reportStatusChart'); if (!stats || !chart) return;
-    const statusCounts = inventoryState.equipos.reduce((counts, item) => { counts[item.estado || 'Sin estado'] = (counts[item.estado || 'Sin estado'] || 0) + 1; return counts; }, {}); const cards = [['Sedes', inventoryState.sedes.length], ['Áreas', inventoryState.areas.length], ['Equipos', inventoryState.equipos.length], ['Usuarios activos', inventoryState.users.filter(user => user.estado === 'Activo').length]];
-    stats.innerHTML = cards.map(([label, value]) => `<div class="report-stat"><span>${label}</span><strong>${value}</strong></div>`).join(''); chart.innerHTML = Object.keys(statusCounts).length ? Object.entries(statusCounts).map(([label, value]) => `<div class="status-row"><span>${escapeHtml(label)}</span><div class="status-track"><i style="width:${inventoryState.equipos.length ? (value / inventoryState.equipos.length) * 100 : 0}%"></i></div><strong>${value}</strong></div>`).join('') : emptyEntity('Aún no hay equipos para mostrar.');
+    const officeList = document.getElementById('reportOfficeList');
+    const officeDetail = document.getElementById('reportOfficeDetail');
+    const attendanceList = document.getElementById('reportAttendanceList');
+    if (!officeList || !officeDetail || !attendanceList) return;
+
+    const areas = inventoryState.areas;
+    if (!areas.some(area => area.id === selectedReportAreaId)) selectedReportAreaId = areas[0]?.id || '';
+    officeList.innerHTML = areas.length ? areas.map(area => {
+        const siteName = inventoryState.sedes.find(site => site.id === area.sedeId)?.nombre || 'Sede eliminada';
+        const count = groupChequeos(inventoryState.chequeos.filter(record => record.areaId === area.id)).length;
+        return `<button class="report-office-button ${area.id === selectedReportAreaId ? 'active' : ''}" type="button" data-report-area="${escapeHtml(area.id)}"><strong>${escapeHtml(area.nombre)}</strong><span>${escapeHtml(siteName)} · ${count} chequeo(s)</span></button>`;
+    }).join('') : emptyEntity('Aún no hay consultorios o áreas registradas.');
+
+    const selectedArea = areas.find(area => area.id === selectedReportAreaId);
+    if (selectedArea) {
+        const siteName = inventoryState.sedes.find(site => site.id === selectedArea.sedeId)?.nombre || 'Sede eliminada';
+        const records = inventoryState.chequeos.filter(record => record.areaId === selectedArea.id).sort((a, b) => new Date(b.fechaHora) - new Date(a.fechaHora));
+        officeDetail.innerHTML = `<h4>${escapeHtml(siteName)} · ${escapeHtml(selectedArea.nombre)}</h4>${records.length ? `<div class="report-chequeo-list">${renderChequeoRecords(records)}</div>` : emptyEntity('Este consultorio aún no tiene chequeos registrados.')}`;
+    } else {
+        officeDetail.innerHTML = emptyEntity('Selecciona un consultorio para ver sus chequeos.');
+    }
+
+    const today = localDayKey(new Date());
+    attendanceList.innerHTML = inventoryState.sedes.length ? inventoryState.sedes.map(site => {
+        const inspectors = inventoryState.users.filter(user => user.roleId === 'inspector' && (user.sedeIds || []).includes(site.id));
+        const rows = inspectors.map(user => {
+            const attendance = inventoryState.asistencias.find(item => item.sedeId === site.id && item.usuarioUid === user.uid && item.fecha === today);
+            const userChecks = inventoryState.chequeos.filter(record => record.sedeId === site.id && record.realizadoPor === user.uid && localDayKey(record.fechaHora) === today);
+            const checkGroups = new Map();
+            userChecks.forEach(record => {
+                const area = inventoryState.areas.find(item => item.id === record.areaId);
+                if (!checkGroups.has(record.areaId)) checkGroups.set(record.areaId, { areaName: area?.nombre || record.areaNombre || 'Consultorio', entrada: false, salida: false });
+                checkGroups.get(record.areaId)[record.tipo === 'salida' ? 'salida' : 'entrada'] = true;
+            });
+            const checkSummary = checkGroups.size
+                ? `Chequeos: ${[...checkGroups.values()].map(group => `${group.areaName} (${group.entrada ? 'entrada' : ''}${group.entrada && group.salida ? ' y ' : ''}${group.salida ? 'salida' : ''})`).join(' · ')}`
+                : 'Sin chequeos hoy';
+            return `
+                <div class="attendance-row">
+                    <div class="attendance-inspector"><strong>${escapeHtml(user.nombre || user.email || 'Inspector')}</strong><span>${escapeHtml(user.email || '')}${user.estado === 'Inactivo' ? ' · Inactivo' : ''}</span></div>
+                    <div class="attendance-control"><span>Registrar asistencia de hoy</span><div class="attendance-actions" role="group" aria-label="Asistencia de ${escapeHtml(user.nombre || user.email || 'Inspector')}"><button class="attendance-mark-button ${attendance?.estado === 'asistio' ? 'active' : ''}" type="button" data-attendance-user="${escapeHtml(user.uid)}" data-attendance-site="${escapeHtml(site.id)}" data-attendance-state="asistio" aria-pressed="${attendance?.estado === 'asistio' ? 'true' : 'false'}">Asistió</button><button class="attendance-mark-button ${attendance?.estado === 'no_asistio' ? 'active' : ''}" type="button" data-attendance-user="${escapeHtml(user.uid)}" data-attendance-site="${escapeHtml(site.id)}" data-attendance-state="no_asistio" aria-pressed="${attendance?.estado === 'no_asistio' ? 'true' : 'false'}">No asistió</button></div></div>
+                    <span class="attendance-check-status ${userChecks.length ? 'has-checks' : ''}">${escapeHtml(checkSummary)}</span>
+                </div>
+            `;
+        }).join('');
+        return `<section class="attendance-site"><h4>${escapeHtml(site.nombre)}</h4>${rows || emptyEntity('No hay inspectores asignados a esta sede.')}</section>`;
+    }).join('') : emptyEntity('Aún no hay sedes registradas.');
+}
+
+async function saveAttendance(event) {
+    const button = event.target.closest('[data-attendance-user][data-attendance-state]');
+    if (!button) return;
+
+    const { attendanceUser: usuarioUid, attendanceSite: sedeId, attendanceState: estado } = button.dataset;
+    const today = localDayKey(new Date());
+    const previousAttendance = inventoryState.asistencias.map(item => ({ ...item }));
+    const existing = inventoryState.asistencias.find(item => item.sedeId === sedeId && item.usuarioUid === usuarioUid && item.fecha === today);
+    const inspector = inventoryState.users.find(user => user.uid === usuarioUid);
+    const currentUser = inventoryState.users.find(user => user.uid === inventoryState.userId);
+    const attendanceRecord = {
+        id: existing?.id || makeId(),
+        sedeId,
+        usuarioUid,
+        usuarioNombre: inspector?.nombre || inspector?.email || 'Inspector',
+        fecha: today,
+        estado,
+        marcadoPor: inventoryState.userId,
+        actualizadoEn: new Date().toISOString(),
+        actualizadoPorNombre: currentUser?.nombre || currentUser?.email || 'Usuario'
+    };
+    if (existing) Object.assign(existing, attendanceRecord);
+    else inventoryState.asistencias.push(attendanceRecord);
+
+    try {
+        await saveInventory();
+    } catch (error) {
+        inventoryState.asistencias = previousAttendance;
+        console.error('No se pudo guardar la asistencia:', error);
+        renderReports();
+        showToast('No se pudo guardar la asistencia. Intenta de nuevo.', 'error');
+        return;
+    }
+    renderReports();
+    showToast('Asistencia de hoy guardada.', 'success');
 }
 function downloadFile(filename, content, type) { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([content], { type })); link.download = filename; link.click(); URL.revokeObjectURL(link.href); }
 function exportExcel() { const rows = [['Equipo', 'Código', 'Tipo', 'Sede', 'Área', 'Estado', 'Número de serie', 'Imagen']]; inventoryState.equipos.forEach(item => { const area = inventoryState.areas.find(areaItem => areaItem.id === item.areaId); rows.push([item.nombre, item.codigo, inventoryState.tipos.find(type => type.id === item.tipoId)?.nombre || '', inventoryState.sedes.find(site => site.id === item.sedeId)?.nombre || '', area?.nombre || '', item.estado, item.serial || '', item.imageUrl || '']); }); downloadFile('reporte-inventario.xls', rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join('\t')).join('\n'), 'application/vnd.ms-excel'); }
 function exportPdf() { const rows = inventoryState.equipos.map(item => `<tr><td>${escapeHtml(item.nombre)}</td><td>${escapeHtml(item.codigo)}</td><td>${escapeHtml(item.estado)}</td><td>${escapeHtml(inventoryState.sedes.find(site => site.id === item.sedeId)?.nombre || '')}</td></tr>`).join(''); const reportWindow = window.open('', '_blank'); if (!reportWindow) return showToast('Permite ventanas emergentes para exportar el PDF.', 'warning'); reportWindow.document.write(`<html><head><title>Reporte de inventario</title><style>body{font-family:Arial;padding:30px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd5d0;padding:8px;text-align:left}th{background:#dce9e2}</style></head><body><h1>Reporte de inventario</h1><p>Generado el ${new Date().toLocaleString('es-CO')}</p><table><thead><tr><th>Equipo</th><th>Código</th><th>Estado</th><th>Sede</th></tr></thead><tbody>${rows}</tbody></table></body></html>`); reportWindow.document.close(); reportWindow.focus(); reportWindow.print(); }
-function detailLabel(key) { return { uid: 'UID', nombre: 'Nombre', email: 'Correo', roleId: 'Rol', estado: 'Estado', sedeIds: 'Sedes asignadas', sedeId: 'Sede', areaId: 'Área', tipoId: 'Tipo de equipo', codigo: 'Código', direccion: 'Dirección', serial: 'Número de serie', descripcion: 'Descripción', chequeable: 'Chequeable', imageUrl: 'Imagen' }[key] || key; }
+function detailLabel(key) { return { uid: 'UID', nombre: 'Nombre', email: 'Correo', roleId: 'Rol', estado: 'Estado', sedeIds: 'Sedes asignadas', sedeId: 'Sede', areaId: 'Área', tipoId: 'Tipo de equipo', codigo: 'Código', direccion: 'Dirección', serial: 'Número de serie', descripcion: 'Descripción', chequeable: 'Chequeable', imageUrl: 'Imagen', signatureUrl: 'Firma' }[key] || key; }
 function detailValue(key, value) { if (key === 'roleId') return roleName(value); if (key === 'sedeIds') return (value || []).map(id => inventoryState.sedes.find(site => site.id === id)?.nombre || id).join(', ') || 'Sin sedes asignadas'; if (key === 'sedeId') return inventoryState.sedes.find(site => site.id === value)?.nombre || 'Sin sede'; if (key === 'areaId') return inventoryState.areas.find(area => area.id === value)?.nombre || 'Sin área'; if (key === 'tipoId') return inventoryState.tipos.find(type => type.id === value)?.nombre || 'Sin tipo'; if (key === 'chequeable') return value ? 'Sí' : 'No'; return value; }
-function showDetail(entity, id) { const item = inventoryState[`${entity}s`].find(record => record.id === id); if (!item) return; const modal = document.getElementById('detailModal'); document.getElementById('detailModalTitle').textContent = item.nombre || item.email || 'Detalle'; const visibleEntries = Object.entries(item).filter(([key]) => !['id', 'datos', 'campos', 'imageUrl'].includes(key) && !key.startsWith('custom_')); const storedCustom = item.datos && Object.keys(item.datos).length ? item.datos : Object.fromEntries(Object.entries(item).filter(([key]) => key.startsWith('custom_')).map(([key, value]) => [key.slice(7), value])); const customFields = entity === 'equipo' ? Object.entries(storedCustom).map(([fieldId, value]) => { const field = inventoryState.tipos.find(type => type.id === item.tipoId)?.campos?.find(candidate => candidate.id === fieldId); return [field?.nombre || fieldId, value]; }) : []; document.getElementById('detailModalBody').innerHTML = `<dl class="detail-list">${visibleEntries.map(([key, value]) => `<div><dt>${escapeHtml(detailLabel(key))}</dt><dd>${escapeHtml(detailValue(key, value))}</dd></div>`).join('')}${customFields.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>${item.imageUrl ? `<img class="equipment-image" src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.nombre)}">` : ''}<button class="btn-secondary close-modal" type="button">Cerrar</button>`; modal.classList.remove('hidden'); modal.querySelector('.close-modal').addEventListener('click', closeDetailModal); }
-function closeDetailModal() { const modal = document.getElementById('detailModal'); const form = modal.querySelector('.entity-form'); if (form?.dataset.returnParentId) { const parent = document.getElementById(form.dataset.returnParentId); if (parent) parent.appendChild(form); form.classList.add('hidden'); delete form.dataset.returnParentId; } modal.classList.add('hidden'); document.getElementById('detailModalBody').innerHTML = ''; }
+function showDetail(entity, id) { const item = inventoryState[`${entity}s`].find(record => record.id === id); if (!item) return; const modal = document.getElementById('detailModal'); document.getElementById('detailModalTitle').textContent = item.nombre || item.email || 'Detalle'; const visibleEntries = Object.entries(item).filter(([key]) => !['id', 'datos', 'campos', 'imageUrl', 'signatureUrl'].includes(key) && !key.startsWith('custom_')); const storedCustom = item.datos && Object.keys(item.datos).length ? item.datos : Object.fromEntries(Object.entries(item).filter(([key]) => key.startsWith('custom_')).map(([key, value]) => [key.slice(7), value])); const customFields = entity === 'equipo' ? Object.entries(storedCustom).map(([fieldId, value]) => { const field = inventoryState.tipos.find(type => type.id === item.tipoId)?.campos?.find(candidate => candidate.id === fieldId); return [field?.nombre || fieldId, value]; }) : []; document.getElementById('detailModalBody').innerHTML = `<dl class="detail-list">${visibleEntries.map(([key, value]) => `<div><dt>${escapeHtml(detailLabel(key))}</dt><dd>${escapeHtml(detailValue(key, value))}</dd></div>`).join('')}${customFields.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>${item.imageUrl ? `<img class="equipment-image" src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.nombre)}">` : ''}${item.signatureUrl ? `<img class="equipment-image" src="${escapeHtml(item.signatureUrl)}" alt="Firma de ${escapeHtml(item.nombre || item.email)}">` : ''}<button class="btn-secondary close-modal" type="button">Cerrar</button>`; modal.classList.remove('hidden'); modal.querySelector('.close-modal').addEventListener('click', closeDetailModal); }
+function closeDetailModal() { const modal = document.getElementById('detailModal'); const form = modal.querySelector('.entity-form'); if (form?.dataset.returnParentId) { const parent = document.getElementById(form.dataset.returnParentId); if (parent) parent.appendChild(form); form.classList.add('hidden'); delete form.dataset.returnParentId; } modal.querySelector('.modal-card')?.classList.remove('checklist-modal-wide'); modal.classList.add('hidden'); document.getElementById('detailModalBody').innerHTML = ''; }
 function uploadToCloudinary(file) { if (!file) return Promise.resolve(''); if (!CLOUDINARY_CONFIG.cloudName || !CLOUDINARY_CONFIG.uploadPreset) return Promise.reject(new Error('Cloudinary aún no está configurado.')); const data = new FormData(); data.append('file', file); data.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset); return fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`, { method: 'POST', body: data }).then(response => { if (!response.ok) throw new Error('No se pudo subir la imagen.'); return response.json(); }).then(result => result.secure_url); }
 document.querySelectorAll('.inventory-tab').forEach(tab => tab.addEventListener('click', () => { document.querySelectorAll('.inventory-tab').forEach(item => item.classList.toggle('active', item === tab)); document.querySelectorAll('.inventory-panel').forEach(panel => panel.classList.toggle('active', panel.id === `inventory-panel-${tab.dataset.inventoryTab}`)); }));
 document.querySelectorAll('.inventory-filter').forEach(input => input.addEventListener('input', renderInventory));
 document.querySelectorAll('.inventory-add').forEach(button => button.addEventListener('click', () => showInventoryForm(button.dataset.entity)));
 document.getElementById('view-inventario').addEventListener('click', event => { const button = event.target.closest('.detail-entity, .edit-entity, .delete-entity'); if (!button) return; if (button.classList.contains('detail-entity')) showDetail(button.dataset.entity, button.dataset.id); else if (button.classList.contains('edit-entity')) showInventoryForm(button.dataset.entity, button.dataset.id); else deleteInventory(button.dataset.entity, button.dataset.id); });
 document.getElementById('newUserBtn').addEventListener('click', () => showUserModal());
+const checklistBoard = document.getElementById('checklistBoard');
+const checklistSede = document.getElementById('checklistSede');
+if (checklistBoard) {
+    checklistBoard.addEventListener('click', handleChecklistAction);
+    checklistBoard.addEventListener('submit', handleChecklistAction);
+    checklistBoard.addEventListener('change', handleChecklistToggle);
+}
+if (checklistSede) {
+    checklistSede.addEventListener('change', renderChecklistModule);
+}
+if (checklistBoard) {
+    checklistBoard.addEventListener('click', event => {
+        if (!event.target.closest('.checklist-go-inventory')) return;
+        switchView('inventario');
+        document.querySelector('.inventory-tab[data-inventory-tab="sedes"]')?.click();
+        document.querySelector('.inventory-add[data-entity="sede"]')?.click();
+    });
+}
 document.getElementById('usersList').addEventListener('click', event => { const button = event.target.closest('.detail-user, .edit-user, .toggle-user'); if (!button) return; const user = inventoryState.users.find(item => item.id === button.dataset.id); if (!user) return; if (button.classList.contains('detail-user')) showDetail('user', button.dataset.id); else if (button.classList.contains('edit-user')) showUserModal(button.dataset.id); else { user.estado = user.estado === 'Activo' ? 'Inactivo' : 'Activo'; saveInventory(); renderInventory(); showToast(`Usuario ${user.estado.toLowerCase()}.`, 'success'); } });
 document.getElementById('userSearch').addEventListener('input', renderUsers); document.getElementById('userRoleFilter').addEventListener('change', renderUsers); document.getElementById('userStatusFilter').addEventListener('change', renderUsers);
 document.getElementById('assignmentUser').addEventListener('change', renderAssignments); document.getElementById('saveAssignmentBtn').addEventListener('click', () => { const user = inventoryState.users.find(item => item.id === document.getElementById('assignmentUser').value); if (!user) return; user.sedeIds = [...document.querySelectorAll('#assignmentSites input:checked')].map(input => input.value); saveInventory(); renderAssignments(); showToast('Asignación guardada.', 'success'); });
-document.getElementById('exportExcelBtn').addEventListener('click', exportExcel); document.getElementById('exportPdfBtn').addEventListener('click', exportPdf); document.getElementById('closeDetailModal').addEventListener('click', closeDetailModal); document.getElementById('detailModal').addEventListener('click', event => { if (event.target.id === 'detailModal') closeDetailModal(); });
+const reportView = document.getElementById('view-reportes');
+if (reportView) {
+    reportView.addEventListener('click', event => {
+        const officeButton = event.target.closest('[data-report-area]');
+        if (!officeButton) return;
+        selectedReportAreaId = officeButton.dataset.reportArea;
+        renderReports();
+    });
+    reportView.addEventListener('click', saveAttendance);
+}
+document.getElementById('closeDetailModal').addEventListener('click', closeDetailModal); document.getElementById('detailModal').addEventListener('click', event => { if (event.target.id === 'detailModal') closeDetailModal(); });
 
 function switchView(viewKey) {
     if (!hasPermission(viewKey)) { showToast('Tu rol no tiene acceso a este módulo.', 'warning'); return; }
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     const target = document.getElementById(`view-${viewKey}`);
     if (target) target.classList.add('active');
+    if (viewKey === 'reportes') renderReports();
 
     navItems.forEach(item => item.classList.toggle('active', item.dataset.view === viewKey));
 

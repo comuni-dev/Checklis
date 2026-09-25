@@ -1,6 +1,6 @@
 // Módulo para control de versiones automático
 const VERSION_KEY = 'checkia_app_version';
-const DEFAULT_VERSION = '1.0.1';
+const DEFAULT_VERSION = '1.0.14';
 
 export async function checkVersion() {
     try {

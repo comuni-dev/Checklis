@@ -13,9 +13,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" />
 
-    <link rel="stylesheet" href="css/style.css?v=1.0.11" />
-    <link rel="stylesheet" href="css/toast.css?v=1.0.11" />
-    <link rel="stylesheet" href="css/dashboard.css?v=1.0.11" />
+    <link rel="stylesheet" href="css/style.css?v=1.0.14" />
+    <link rel="stylesheet" href="css/toast.css?v=1.0.14" />
+    <link rel="stylesheet" href="css/dashboard.css?v=1.0.14" />
 </head>
 <body class="dashboard-body">
 
@@ -201,21 +201,35 @@
 
                 <!-- VISTA: REPORTES -->
                 <div class="view" id="view-reportes">
-                    <div class="section-heading"><div><span class="eyebrow">Centro de información</span><h2>Reportes</h2><p>Consulta el estado del inventario y exporta sus datos.</p></div><div class="report-actions"><button id="exportExcelBtn" class="btn-secondary" type="button">Exportar Excel</button><button id="exportPdfBtn" class="btn-primary" type="button">Exportar PDF</button></div></div>
-                    <div class="report-stats" id="reportStats"></div>
-                    <div class="report-card"><div class="panel-toolbar"><div><h3>Equipos por estado</h3><p>Distribución actual del inventario.</p></div></div><div id="reportStatusChart" class="status-chart"></div></div>
+                    <div class="section-heading"><div><span class="eyebrow">Control operativo</span><h2>Reportes de chequeos</h2><p>Consulta los registros por consultorio y cruza la asistencia diaria por sede.</p></div></div>
+                    <section class="report-section" aria-labelledby="reportOfficesTitle">
+                        <div class="report-section-heading"><h3 id="reportOfficesTitle">Chequeos por consultorio</h3><span>Selecciona un consultorio para ver su historial.</span></div>
+                        <div class="report-office-layout"><div id="reportOfficeList" class="report-office-list"></div><div id="reportOfficeDetail" class="report-office-detail"></div></div>
+                    </section>
+                    <section class="report-section" aria-labelledby="reportAttendanceTitle">
+                        <div class="report-section-heading"><h3 id="reportAttendanceTitle">Asistencia de inspectores</h3><span>Estado de hoy y chequeos registrados por sede.</span></div>
+                        <div id="reportAttendanceList" class="report-attendance-list"></div>
+                    </section>
                 </div>
 
                 <!-- VISTA: CHECKLISTS -->
                 <div class="view" id="view-checklists">
-                    <div class="empty-state">
-                        <div class="empty-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    <div class="section-heading">
+                        <div>
+                            <span class="eyebrow">Control operativo</span>
+                            <h2>Chequeos diarios</h2>
+                            <p>Selecciona la sede, revisa solo las áreas chequeables y registra los equipos con su estado y observaciones.</p>
                         </div>
-                        <h3>Módulo de Checklists</h3>
-                        <p>Este módulo estará disponible próximamente.</p>
-                        <button class="btn-primary" disabled>Próximamente</button>
                     </div>
+
+                    <div class="checklist-toolbar">
+                        <select id="checklistSede" aria-label="Seleccionar sede">
+                            <option value="">Selecciona una sede</option>
+                        </select>
+                        <div class="checklist-meta-box" id="checklistMetaBox">Sin sede seleccionada</div>
+                    </div>
+
+                    <div id="checklistBoard" class="checklist-board"></div>
                 </div>
 
                 <!-- VISTA: INVENTARIO -->
@@ -289,8 +303,8 @@
         }
     </script>
 
-    <script type="module" src="js/version-check.js?v=1.0.11"></script>
-    <script type="module" src="js/firebase-config.js?v=1.0.11"></script>
-    <script type="module" src="js/dashboard.js?v=1.0.11"></script>
+    <script type="module" src="js/version-check.js?v=1.0.14"></script>
+    <script type="module" src="js/firebase-config.js?v=1.0.14"></script>
+    <script type="module" src="js/dashboard.js?v=1.0.14"></script>
 </body>
 </html>
