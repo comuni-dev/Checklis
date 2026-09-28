@@ -67,6 +67,8 @@ const navItems      = document.querySelectorAll('.nav-item');
 
 const inventoryState = { userId: null, workspaceId: 'default', sedes: [], areas: [], tipos: [], equipos: [], users: [], roles: [], checklists: [], chequeos: [], asistencias: [] };
 let selectedReportAreaId = '';
+let reportChequeoDate = localDayKey(new Date());
+let reportAttendanceDate = localDayKey(new Date());
 const INVENTORY_KEY = 'checklis_workspace_';
 const CLOUDINARY_CONFIG = { cloudName: 'd1apmqkf', uploadPreset: 'checklis' };
 const DEFAULT_ROLES = [
@@ -194,7 +196,7 @@ function renderInventory() {
     document.getElementById('list-areas').innerHTML = areas.length ? areas.map(item => `<article class="entity-row"><div><strong>${escapeHtml(item.nombre)}</strong><span>${escapeHtml(sedeName(item.sedeId))} · ${escapeHtml(item.descripcion || 'Sin descripción')} · ${item.chequeable === false ? 'No chequeable' : 'Chequeable'}</span></div>${entityActions('area', item.id)}</article>`).join('') : emptyEntity(inventoryState.areas.length ? 'No hay áreas con ese filtro.' : 'Aún no hay áreas.');
     document.getElementById('list-tipos').innerHTML = tipos.length ? tipos.map(item => `<article class="entity-row"><div><strong>${escapeHtml(item.nombre)}</strong><span>${item.campos.length} campo(s): ${item.campos.map(field => escapeHtml(field.nombre)).join(', ') || 'solo campos generales'}</span></div>${entityActions('tipo', item.id)}</article>`).join('') : emptyEntity(inventoryState.tipos.length ? 'No hay tipos con ese filtro.' : 'Aún no hay tipos de equipo.');
     document.getElementById('list-equipos').innerHTML = equipos.length ? equipos.map(item => `<article class="entity-row"><div><strong>${escapeHtml(item.nombre)}</strong><span>${escapeHtml(tipoName(item.tipoId))} · ${escapeHtml(sedeName(item.sedeId))} / ${escapeHtml(areaName(item.areaId))} · ${escapeHtml(item.estado)}${item.chequeable ? ' · Chequeable' : ''}</span></div>${entityActions('equipo', item.id)}</article>`).join('') : emptyEntity(inventoryState.equipos.length ? 'No hay equipos con ese filtro.' : 'Aún no hay equipos.');
-    renderUsers(); renderAssignments(); renderReports(); renderChecklistModule();
+    renderUsers(); renderAssignments(); renderReports(); renderChecklistModule(); renderDashboard();
 }
 
 function getLatestChequeoForArea(areaId, sedeId) {
@@ -207,6 +209,12 @@ function localDayKey(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function formatDayKey(value) {
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return value;
+    return new Date(year, month - 1, day).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
 function getAreaChequeoAction(areaId, sedeId) {
@@ -292,15 +300,17 @@ function renderChequeoRecords(records) {
         const record = group.latest;
         const siteName = record.sedeNombre || inventoryState.sedes.find(site => site.id === record.sedeId)?.nombre || 'Sede eliminada';
         const areaName = record.areaNombre || inventoryState.areas.find(area => area.id === record.areaId)?.nombre || 'Área eliminada';
-        const userName = inventoryState.users.find(user => user.uid === record.realizadoPor)?.nombre || record.realizadoPor || 'Usuario';
+        const author = inventoryState.users.find(user => user.uid === record.realizadoPor);
+        const userName = record.realizadoPorNombre || author?.nombre || author?.email || record.realizadoPor || 'Usuario';
+        const signature = record.firmaRealizador || author?.signatureUrl || '';
         return `
             <article class="checklist-history-item">
                 <div class="checklist-history-heading">
                     <strong>${escapeHtml(siteName)} · ${escapeHtml(areaName)}</strong>
                     <time datetime="${escapeHtml(record.fechaHora)}">${escapeHtml(formatDate(record.fechaHora))}</time>
                 </div>
-                <span class="checklist-history-user">Chequeo de ${escapeHtml(userName)}</span>
-                <div class="checklist-history-phases">${renderChequeoPhase('Entrada', group.entrada)}${renderChequeoPhase('Salida', group.salida)}</div>
+                <div class="checklist-history-user"><span>Chequeo de ${escapeHtml(userName)}</span>${signature ? `<a class="checklist-history-signature-link" href="${escapeHtml(signature)}" target="_blank" rel="noopener noreferrer"><img class="checklist-history-signature" src="${escapeHtml(signature)}" alt="Firma de ${escapeHtml(userName)}"></a>` : '<span class="checklist-signature-missing">Sin firma registrada</span>'}</div>
+                <div class="checklist-history-phases">${group.entrada ? renderChequeoPhase(group.salida ? 'Entrada' : 'Solo entrada', group.entrada) : group.salida ? renderChequeoPhase('Entrada', null) : ''}${group.salida ? renderChequeoPhase('Salida', group.salida) : ''}</div>
             </article>
         `;
     }).join('');
@@ -320,10 +330,51 @@ function groupChequeos(records) {
     return [...groups.values()].sort((a, b) => new Date(b.latest.fechaHora) - new Date(a.latest.fechaHora));
 }
 
+function renderDashboard() {
+    const checksTodayElement = document.getElementById('dashboardChecksToday');
+    const pendingAreasElement = document.getElementById('dashboardAreasPending');
+    const siteSummary = document.getElementById('dashboardSiteSummary');
+    const recentChecks = document.getElementById('dashboardRecentChecks');
+    if (!checksTodayElement || !pendingAreasElement || !siteSummary || !recentChecks) return;
+
+    const today = localDayKey(new Date());
+    const currentUser = inventoryState.users.find(user => user.uid === inventoryState.userId);
+    const assignedSiteIds = currentUser?.roleId === 'administrador' ? null : new Set(currentUser?.sedeIds || []);
+    const visibleSites = inventoryState.sedes.filter(site => !assignedSiteIds || assignedSiteIds.has(site.id));
+    const visibleSiteIds = new Set(visibleSites.map(site => site.id));
+    const visibleAreas = inventoryState.areas.filter(area => area.chequeable !== false && visibleSiteIds.has(area.sedeId));
+    const todayRecords = inventoryState.chequeos.filter(record => localDayKey(record.fechaHora) === today && visibleSiteIds.has(record.sedeId));
+    const checkedAreaIds = new Set(todayRecords.map(record => record.areaId));
+
+    checksTodayElement.textContent = checkedAreaIds.size;
+    pendingAreasElement.textContent = visibleAreas.filter(area => !checkedAreaIds.has(area.id)).length;
+    document.getElementById('statUsuarios').textContent = inventoryState.users.filter(user => user.estado === 'Activo').length;
+    document.getElementById('dashboardCoverageDate').textContent = `Cobertura · ${formatDayKey(today)}`;
+
+    siteSummary.innerHTML = visibleSites.length ? visibleSites.map(site => {
+        const areas = visibleAreas.filter(area => area.sedeId === site.id);
+        const checked = areas.filter(area => checkedAreaIds.has(area.id)).length;
+        const percentage = areas.length ? Math.round((checked / areas.length) * 100) : 0;
+        return `<article class="dashboard-site-row"><div class="dashboard-site-heading"><strong>${escapeHtml(site.nombre)}</strong><span>${checked} / ${areas.length} áreas</span></div>${areas.length ? `<div class="dashboard-progress" role="progressbar" aria-label="Cobertura de ${escapeHtml(site.nombre)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percentage}"><span style="width:${percentage}%"></span></div>` : '<span class="dashboard-site-empty">Sin áreas chequeables</span>'}</article>`;
+    }).join('') : emptyEntity('No hay sedes asignadas a tu usuario.');
+
+    const recent = inventoryState.chequeos.filter(record => visibleSiteIds.has(record.sedeId)).sort((a, b) => new Date(b.fechaHora) - new Date(a.fechaHora)).slice(0, 5);
+    recentChecks.innerHTML = recent.length ? recent.map(record => {
+        const siteName = record.sedeNombre || inventoryState.sedes.find(site => site.id === record.sedeId)?.nombre || 'Sede eliminada';
+        const areaName = record.areaNombre || inventoryState.areas.find(area => area.id === record.areaId)?.nombre || 'Área eliminada';
+        const author = record.realizadoPorNombre || inventoryState.users.find(user => user.uid === record.realizadoPor)?.nombre || record.realizadoPor || 'Usuario';
+        const phase = record.tipo === 'salida' ? 'Salida' : 'Entrada';
+        return `<article class="dashboard-recent-item"><span class="dashboard-recent-mark ${record.tipo === 'salida' ? 'is-exit' : ''}" aria-hidden="true"></span><div class="dashboard-recent-main"><strong>${escapeHtml(areaName)} · ${escapeHtml(siteName)}</strong><span>${phase} · ${escapeHtml(author)}</span></div><time datetime="${escapeHtml(record.fechaHora)}">${escapeHtml(formatDate(record.fechaHora))}</time></article>`;
+    }).join('') : emptyEntity('Aún no hay chequeos registrados.');
+}
+
 function renderChequeoPhase(label, record) {
     if (!record) return `<section class="checklist-history-phase pending"><strong>${label}</strong><span>Pendiente</span></section>`;
     const equipmentRows = (record.equipos || []).map(equipment => `
-        <li><strong>${escapeHtml(equipment.nombre)}</strong><span>${escapeHtml(equipment.estado || 'Sin estado')}${equipment.observacion ? ` · ${escapeHtml(equipment.observacion)}` : ''}</span></li>
+        <li>
+            <div class="checklist-history-equipment-info"><strong>${escapeHtml(equipment.nombre)}</strong><span class="equipment-state">${escapeHtml(equipment.estado || 'Sin estado')}</span>${equipment.observacion ? `<p>${escapeHtml(equipment.observacion)}</p>` : ''}</div>
+            ${equipment.foto ? `<a class="checklist-history-photo-link" href="${escapeHtml(equipment.foto)}" target="_blank" rel="noopener noreferrer"><img class="checklist-history-photo" src="${escapeHtml(equipment.foto)}" alt="Foto de ${escapeHtml(equipment.nombre)}"></a>` : ''}
+        </li>
     `).join('');
     return `
         <section class="checklist-history-phase completed">
@@ -332,6 +383,22 @@ function renderChequeoPhase(label, record) {
             ${equipmentRows ? `<ul>${equipmentRows}</ul>` : ''}
         </section>
     `;
+}
+
+function showAreaReportModal(area) {
+    const siteName = inventoryState.sedes.find(site => site.id === area.sedeId)?.nombre || 'Sede eliminada';
+    const records = inventoryState.chequeos
+        .filter(record => record.areaId === area.id && localDayKey(record.fechaHora) === reportChequeoDate)
+        .sort((a, b) => new Date(b.fechaHora) - new Date(a.fechaHora));
+    const modal = document.getElementById('detailModal');
+    const body = document.getElementById('detailModalBody');
+    modal.querySelector('.modal-card')?.classList.add('checklist-modal-wide');
+    document.getElementById('detailModalTitle').textContent = `${siteName} · ${area.nombre} · ${formatDayKey(reportChequeoDate)}`;
+    body.innerHTML = `${records.length
+        ? `<div class="report-chequeo-list">${renderChequeoRecords(records)}</div>`
+        : emptyEntity(`Este consultorio no tiene chequeos registrados el ${escapeHtml(formatDayKey(reportChequeoDate))}.`)}<div class="form-actions"><button class="btn-secondary close-modal" type="button">Cerrar</button></div>`;
+    modal.classList.remove('hidden');
+    body.querySelector('.close-modal').addEventListener('click', closeDetailModal);
 }
 
 function showAreaChequeoModal(sedeId, areaId) {
@@ -371,10 +438,16 @@ function showAreaChequeoModal(sedeId, areaId) {
                             <span class="checklist-label">Observación del equipo</span>
                             <textarea name="equipoObs_${equipo.id}" placeholder="Escribe la observación de este equipo..."></textarea>
                         </label>
-                        <label>
+                        <div class="checklist-photo-control">
                             <span class="checklist-label">Foto (opcional)</span>
-                            <input name="equipoImage_${equipo.id}" type="file" accept="image/*">
-                        </label>
+                            <div class="checklist-photo-actions">
+                                <button class="checklist-photo-button" type="button" data-photo-select="${escapeHtml(equipo.id)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5h-4l-2 2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg><span>Adjuntar foto</span></button>
+                                <button class="checklist-photo-remove" type="button" data-photo-remove="${escapeHtml(equipo.id)}" aria-label="Quitar foto" title="Quitar foto" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg></button>
+                                <span class="checklist-photo-filename">Sin foto seleccionada</span>
+                            </div>
+                            <input class="checklist-photo-input" id="checklist-photo-${escapeHtml(equipo.id)}" name="equipoImage_${equipo.id}" type="file" accept="image/*" tabindex="-1" aria-label="Adjuntar foto de ${escapeHtml(equipo.nombre)}">
+                            <img class="checklist-photo-preview" alt="Vista previa de ${escapeHtml(equipo.nombre)}" hidden>
+                        </div>
                     </div>
                 `).join('') : '<div class="entity-empty">No hay equipos chequeables en esta área.</div>'}
             </div>
@@ -382,16 +455,53 @@ function showAreaChequeoModal(sedeId, areaId) {
                 <span class="checklist-label">Observación general del área</span>
                 <textarea name="observaciones" placeholder="Agrega una observación general..."></textarea>
             </label>
-            <div class="form-actions">
-                <button type="button" class="btn-secondary close-modal">Cancelar</button>
-                <button type="submit" class="btn-primary" ${action.allowed ? '' : 'disabled'}>${escapeHtml(action.label)}</button>
+            <div class="form-actions checklist-modal-actions">
+                <button type="button" class="btn-secondary close-modal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg><span>Cancelar</span></button>
+                <button type="submit" class="btn-primary" ${action.allowed ? '' : 'disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><span>${escapeHtml(action.label)}</span></button>
             </div>
         </form>
     `;
 
     modal.classList.remove('hidden');
     body.querySelector('.close-modal').addEventListener('click', closeDetailModal);
-    body.querySelector('form').addEventListener('submit', handleChecklistSubmit);
+    const form = body.querySelector('form');
+    form.addEventListener('submit', handleChecklistSubmit);
+    form.querySelectorAll('.checklist-photo-input').forEach(input => input.addEventListener('change', () => updateChecklistPhotoPreview(input)));
+    form.querySelectorAll('[data-photo-select]').forEach(button => button.addEventListener('click', () => document.getElementById(`checklist-photo-${button.dataset.photoSelect}`)?.click()));
+    form.querySelectorAll('[data-photo-remove]').forEach(button => button.addEventListener('click', () => clearChecklistPhotoPreview(document.getElementById(`checklist-photo-${button.dataset.photoRemove}`))));
+}
+
+function updateChecklistPhotoPreview(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+        showToast('Selecciona un archivo de imagen.', 'warning');
+        clearChecklistPhotoPreview(input);
+        return;
+    }
+    clearChecklistPhotoPreview(input, false);
+    const previewUrl = URL.createObjectURL(file);
+    input.dataset.previewUrl = previewUrl;
+    const control = input.closest('.checklist-photo-control');
+    const preview = control.querySelector('.checklist-photo-preview');
+    preview.src = previewUrl;
+    preview.hidden = false;
+    control.querySelector('.checklist-photo-filename').textContent = file.name;
+    control.querySelector('[data-photo-remove]').hidden = false;
+}
+
+function clearChecklistPhotoPreview(input, clearFile = true) {
+    if (!input) return;
+    if (input.dataset.previewUrl) URL.revokeObjectURL(input.dataset.previewUrl);
+    delete input.dataset.previewUrl;
+    if (clearFile) input.value = '';
+    const control = input.closest('.checklist-photo-control');
+    if (!control) return;
+    const preview = control.querySelector('.checklist-photo-preview');
+    preview.removeAttribute('src');
+    preview.hidden = true;
+    control.querySelector('.checklist-photo-filename').textContent = 'Sin foto seleccionada';
+    control.querySelector('[data-photo-remove]').hidden = true;
 }
 
 async function handleChecklistSubmit(event) {
@@ -413,6 +523,7 @@ async function handleChecklistSubmit(event) {
     try {
         const area = inventoryState.areas.find(item => item.id === areaId);
         const selectedSede = inventoryState.sedes.find(item => item.id === sedeId);
+        const author = inventoryState.users.find(item => item.uid === inventoryState.userId);
         const equipments = (inventoryState.equipos || []).filter(equipo => equipo.sedeId === sedeId && equipo.areaId === areaId && equipo.chequeable !== false);
 
         const chequeoEquipos = await Promise.all(equipments.map(async (equipo) => {
@@ -433,6 +544,8 @@ async function handleChecklistSubmit(event) {
             fechaHora: new Date().toISOString(),
             observaciones: form.elements.observaciones?.value?.trim() || '',
             realizadoPor: inventoryState.userId || 'local',
+            realizadoPorNombre: author?.nombre || author?.email || 'Usuario',
+            firmaRealizador: author?.signatureUrl || '',
             areaNombre: area?.nombre || 'Área',
             equipos: chequeoEquipos
         };
@@ -447,6 +560,7 @@ async function handleChecklistSubmit(event) {
 
         renderChecklistModule();
         renderReports();
+        renderDashboard();
         closeDetailModal();
         showToast(`${action.type === 'entrada' ? 'Entrada' : 'Salida'} registrada en ${area?.nombre || 'el área'}.`, 'success');
     } catch (error) {
@@ -478,18 +592,18 @@ function showInventoryForm(entity, id = '') {
     if (entity === 'equipo') fields = `<label>Nombre<input name="nombre" required value="${value('nombre')}" placeholder="Báscula recepción"></label><label>Código / inventario<input name="codigo" required value="${value('codigo')}" placeholder="EQ-001"></label><label>Área<select name="areaId" required><option value="">Selecciona un área</option>${optionList(inventoryState.areas, current?.areaId)}</select></label><label>Sede<div class="derived-value" id="derived-sede">${escapeHtml(inventoryState.sedes.find(item => item.id === current?.sedeId)?.nombre || 'Se asigna automáticamente')}</div></label><label>Tipo de equipo<select name="tipoId" required><option value="">Selecciona un tipo</option>${optionList(inventoryState.tipos, current?.tipoId)}</select></label><label>Estado<select name="estado"><option ${current?.estado === 'Activo' || !current ? 'selected' : ''}>Activo</option><option ${current?.estado === 'En mantenimiento' ? 'selected' : ''}>En mantenimiento</option><option ${current?.estado === 'Fuera de servicio' ? 'selected' : ''}>Fuera de servicio</option></select></label><label>Número de serie<input name="serial" value="${value('serial')}" placeholder="Serie del fabricante"></label><label>Imagen del equipo<input name="imageFile" type="file" accept="image/*"><input name="imageUrl" type="hidden" value="${value('imageUrl')}"></label><label class="check-control full"><input name="chequeable" type="checkbox" ${current?.chequeable !== false ? 'checked' : ''}> <span>Es chequeable</span></label><div id="dynamic-equipment-fields" class="dynamic-fields full"></div>`;
     form.innerHTML = `<form data-entity-form="${entity}" data-id="${id}"><div class="form-grid">${fields}</div><div class="form-actions"><button type="button" class="btn-secondary cancel-form">Cancelar</button><button class="btn-primary" type="submit">${id ? 'Guardar cambios' : 'Crear'}</button></div></form>`; form.classList.remove('hidden');
     if (entity === 'tipo') form.querySelector('.add-field').addEventListener('click', () => form.querySelector('.field-definitions').insertAdjacentHTML('beforeend', fieldDefinition()));
-    if (entity === 'equipo') { const legacyCustom = Object.fromEntries(Object.entries(current || {}).filter(([key]) => key.startsWith('custom_')).map(([key, fieldValue]) => [key.slice(7), fieldValue])); const customData = current?.datos && Object.keys(current.datos).length ? current.datos : legacyCustom; form.dataset.custom = JSON.stringify(customData); form.querySelector('[name="areaId"]').addEventListener('change', updateDerivedSite); form.querySelector('[name="tipoId"]').addEventListener('change', updateEquipmentFields); updateDerivedSite(); updateEquipmentFields(); }
+    if (entity === 'equipo') { const legacyCustom = Object.fromEntries(Object.entries(current || {}).filter(([key]) => key.startsWith('custom_')).map(([key, fieldValue]) => [key.slice(7), fieldValue])); const customData = current?.datos && Object.keys(current.datos).length ? current.datos : legacyCustom; form.dataset.custom = JSON.stringify(customData); form.dataset.originalTipoId = current?.tipoId || ''; form.querySelector('[name="areaId"]').addEventListener('change', updateDerivedSite); form.querySelector('[name="tipoId"]').addEventListener('change', updateEquipmentFields); updateDerivedSite(); updateEquipmentFields(); }
     form.querySelectorAll('.remove-field').forEach(button => button.addEventListener('click', () => button.parentElement.remove())); form.querySelector('.cancel-form').addEventListener('click', closeDetailModal); form.querySelector('form').addEventListener('submit', event => submitInventoryForm(event, entity, id));
 }
-function fieldDefinition(field = {}) { return `<div class="field-definition"><input name="fieldName" required value="${escapeHtml(field.nombre || '')}" placeholder="Nombre del campo"><select name="fieldType"><option value="text" ${field.tipo === 'text' ? 'selected' : ''}>Texto</option><option value="number" ${field.tipo === 'number' ? 'selected' : ''}>Número</option><option value="date" ${field.tipo === 'date' ? 'selected' : ''}>Fecha</option></select><button type="button" class="remove-field">×</button></div>`; }
+function fieldDefinition(field = {}) { return `<div class="field-definition"><input type="hidden" name="fieldId" value="${escapeHtml(field.id || '')}"><input name="fieldName" required value="${escapeHtml(field.nombre || '')}" placeholder="Nombre del campo"><select name="fieldType"><option value="text" ${field.tipo === 'text' ? 'selected' : ''}>Texto</option><option value="number" ${field.tipo === 'number' ? 'selected' : ''}>Número</option><option value="date" ${field.tipo === 'date' ? 'selected' : ''}>Fecha</option></select><button type="button" class="remove-field">×</button></div>`; }
 function updateDerivedSite() { const form = document.querySelector('#form-equipo form'); if (!form) return; const area = inventoryState.areas.find(item => item.id === form.querySelector('[name="areaId"]').value); const sede = inventoryState.sedes.find(item => item.id === area?.sedeId); document.getElementById('derived-sede').textContent = sede?.nombre || 'Se asigna automáticamente'; form.dataset.sedeId = sede?.id || ''; }
-function updateEquipmentFields() { const form = document.querySelector('#form-equipo form'); if (!form) return; const tipo = inventoryState.tipos.find(item => item.id === form.querySelector('[name="tipoId"]').value); let custom = {}; try { custom = JSON.parse(form.dataset.custom || '{}'); } catch { custom = {}; } document.getElementById('dynamic-equipment-fields').innerHTML = tipo?.campos?.length ? `<h4>Datos de ${escapeHtml(tipo.nombre)}</h4>${tipo.campos.map(field => `<label>${escapeHtml(field.nombre)}<input type="${field.tipo}" name="custom_${field.id}" value="${escapeHtml(custom[field.id] || '')}" required></label>`).join('')}` : ''; }
+function updateEquipmentFields() { const form = document.querySelector('#form-equipo form'); if (!form) return; const tipo = inventoryState.tipos.find(item => item.id === form.querySelector('[name="tipoId"]').value); let custom = {}; try { custom = JSON.parse(form.dataset.custom || '{}'); } catch { custom = {}; } const customEntries = Object.entries(custom); document.getElementById('dynamic-equipment-fields').innerHTML = tipo?.campos?.length ? `<h4>Datos de ${escapeHtml(tipo.nombre)}</h4>${tipo.campos.map((field, index) => { const namedValue = custom[field.id] ?? custom[field.nombre] ?? customEntries.find(([key]) => key.toLowerCase() === field.nombre.toLowerCase())?.[1]; const legacyValue = form.dataset.originalTipoId === tipo.id && customEntries.length === tipo.campos.length ? customEntries[index][1] : ''; return `<label>${escapeHtml(field.nombre)}<input type="${field.tipo}" name="custom_${field.id}" value="${escapeHtml(namedValue ?? legacyValue ?? '')}" required></label>`; }).join('')}` : ''; }
 async function submitInventoryForm(event, entity, id) {
     event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form).entries()); const collection = `${entity}s`; const record = { ...(id ? inventoryState[collection].find(item => item.id === id) : {}), id: id || makeId(), ...data };
     if (entity === 'equipo') { record.sedeId = form.dataset.sedeId || ''; record.chequeable = form.elements.chequeable.checked; delete record.imageFile; }
     if (entity === 'area') record.chequeable = form.elements.chequeable.checked;
     Object.keys(record).filter(key => key.startsWith('custom_')).forEach(key => delete record[key]);
-    if (entity === 'tipo') record.campos = [...form.querySelectorAll('.field-definition')].map(field => ({ id: makeId(), nombre: field.querySelector('[name="fieldName"]').value.trim(), tipo: field.querySelector('[name="fieldType"]').value }));
+    if (entity === 'tipo') record.campos = [...form.querySelectorAll('.field-definition')].map(field => ({ id: field.querySelector('[name="fieldId"]').value || makeId(), nombre: field.querySelector('[name="fieldName"]').value.trim(), tipo: field.querySelector('[name="fieldType"]').value }));
     if (entity === 'equipo') { record.datos = {}; const tipo = inventoryState.tipos.find(item => item.id === record.tipoId); tipo?.campos?.forEach(field => { record.datos[field.id] = data[`custom_${field.id}`] || ''; }); const imageFile = form.querySelector('[name="imageFile"]')?.files?.[0]; if (imageFile) { try { record.imageUrl = await uploadToCloudinary(imageFile); } catch (error) { showToast(error.message, 'warning'); return; } } }
     const index = inventoryState[collection].findIndex(item => item.id === record.id); if (index >= 0) inventoryState[collection][index] = record; else inventoryState[collection].push(record); saveInventory(); renderInventory(); closeDetailModal(); showToast(id ? 'Cambios guardados.' : 'Registro creado.', 'success');
 }
@@ -518,33 +632,31 @@ function renderAssignments() {
 }
 function renderReports() {
     const officeList = document.getElementById('reportOfficeList');
-    const officeDetail = document.getElementById('reportOfficeDetail');
     const attendanceList = document.getElementById('reportAttendanceList');
-    if (!officeList || !officeDetail || !attendanceList) return;
+    const chequeoDateInput = document.getElementById('reportChequeoDate');
+    const attendanceDateInput = document.getElementById('reportAttendanceDate');
+    if (!officeList || !attendanceList || !chequeoDateInput || !attendanceDateInput) return;
+
+    chequeoDateInput.value = reportChequeoDate;
+    attendanceDateInput.value = reportAttendanceDate;
 
     const areas = inventoryState.areas;
     if (!areas.some(area => area.id === selectedReportAreaId)) selectedReportAreaId = areas[0]?.id || '';
     officeList.innerHTML = areas.length ? areas.map(area => {
         const siteName = inventoryState.sedes.find(site => site.id === area.sedeId)?.nombre || 'Sede eliminada';
-        const count = groupChequeos(inventoryState.chequeos.filter(record => record.areaId === area.id)).length;
+        const count = groupChequeos(inventoryState.chequeos.filter(record => record.areaId === area.id && localDayKey(record.fechaHora) === reportChequeoDate)).length;
         return `<button class="report-office-button ${area.id === selectedReportAreaId ? 'active' : ''}" type="button" data-report-area="${escapeHtml(area.id)}"><strong>${escapeHtml(area.nombre)}</strong><span>${escapeHtml(siteName)} · ${count} chequeo(s)</span></button>`;
     }).join('') : emptyEntity('Aún no hay consultorios o áreas registradas.');
 
-    const selectedArea = areas.find(area => area.id === selectedReportAreaId);
-    if (selectedArea) {
-        const siteName = inventoryState.sedes.find(site => site.id === selectedArea.sedeId)?.nombre || 'Sede eliminada';
-        const records = inventoryState.chequeos.filter(record => record.areaId === selectedArea.id).sort((a, b) => new Date(b.fechaHora) - new Date(a.fechaHora));
-        officeDetail.innerHTML = `<h4>${escapeHtml(siteName)} · ${escapeHtml(selectedArea.nombre)}</h4>${records.length ? `<div class="report-chequeo-list">${renderChequeoRecords(records)}</div>` : emptyEntity('Este consultorio aún no tiene chequeos registrados.')}`;
-    } else {
-        officeDetail.innerHTML = emptyEntity('Selecciona un consultorio para ver sus chequeos.');
-    }
-
-    const today = localDayKey(new Date());
+    const isToday = reportAttendanceDate === localDayKey(new Date());
+    document.getElementById('reportAttendanceDateLabel').textContent = isToday
+        ? `Registro del día · ${formatDayKey(reportAttendanceDate)}`
+        : `Consulta histórica · ${formatDayKey(reportAttendanceDate)}`;
     attendanceList.innerHTML = inventoryState.sedes.length ? inventoryState.sedes.map(site => {
         const inspectors = inventoryState.users.filter(user => user.roleId === 'inspector' && (user.sedeIds || []).includes(site.id));
         const rows = inspectors.map(user => {
-            const attendance = inventoryState.asistencias.find(item => item.sedeId === site.id && item.usuarioUid === user.uid && item.fecha === today);
-            const userChecks = inventoryState.chequeos.filter(record => record.sedeId === site.id && record.realizadoPor === user.uid && localDayKey(record.fechaHora) === today);
+            const attendance = inventoryState.asistencias.find(item => item.sedeId === site.id && item.usuarioUid === user.uid && item.fecha === reportAttendanceDate);
+            const userChecks = inventoryState.chequeos.filter(record => record.sedeId === site.id && record.realizadoPor === user.uid && localDayKey(record.fechaHora) === reportAttendanceDate);
             const checkGroups = new Map();
             userChecks.forEach(record => {
                 const area = inventoryState.areas.find(item => item.id === record.areaId);
@@ -553,11 +665,14 @@ function renderReports() {
             });
             const checkSummary = checkGroups.size
                 ? `Chequeos: ${[...checkGroups.values()].map(group => `${group.areaName} (${group.entrada ? 'entrada' : ''}${group.entrada && group.salida ? ' y ' : ''}${group.salida ? 'salida' : ''})`).join(' · ')}`
-                : 'Sin chequeos hoy';
+                : 'Sin chequeos en esta fecha';
+            const attendanceControl = isToday
+                ? `<div class="attendance-control"><span>Registrar asistencia de hoy</span><div class="attendance-actions" role="group" aria-label="Asistencia de ${escapeHtml(user.nombre || user.email || 'Inspector')}"><button class="attendance-mark-button ${attendance?.estado === 'asistio' ? 'active' : ''}" type="button" data-attendance-user="${escapeHtml(user.uid)}" data-attendance-site="${escapeHtml(site.id)}" data-attendance-state="asistio" aria-pressed="${attendance?.estado === 'asistio' ? 'true' : 'false'}">Asistió</button><button class="attendance-mark-button ${attendance?.estado === 'no_asistio' ? 'active' : ''}" type="button" data-attendance-user="${escapeHtml(user.uid)}" data-attendance-site="${escapeHtml(site.id)}" data-attendance-state="no_asistio" aria-pressed="${attendance?.estado === 'no_asistio' ? 'true' : 'false'}">No asistió</button></div></div>`
+                : `<div class="attendance-control"><span>Asistencia registrada</span><strong class="attendance-readonly-status ${attendance ? `status-${escapeHtml(attendance.estado)}` : 'status-empty'}">${attendance?.estado === 'asistio' ? 'Asistió' : attendance?.estado === 'no_asistio' ? 'No asistió' : 'Sin registro'}</strong></div>`;
             return `
                 <div class="attendance-row">
                     <div class="attendance-inspector"><strong>${escapeHtml(user.nombre || user.email || 'Inspector')}</strong><span>${escapeHtml(user.email || '')}${user.estado === 'Inactivo' ? ' · Inactivo' : ''}</span></div>
-                    <div class="attendance-control"><span>Registrar asistencia de hoy</span><div class="attendance-actions" role="group" aria-label="Asistencia de ${escapeHtml(user.nombre || user.email || 'Inspector')}"><button class="attendance-mark-button ${attendance?.estado === 'asistio' ? 'active' : ''}" type="button" data-attendance-user="${escapeHtml(user.uid)}" data-attendance-site="${escapeHtml(site.id)}" data-attendance-state="asistio" aria-pressed="${attendance?.estado === 'asistio' ? 'true' : 'false'}">Asistió</button><button class="attendance-mark-button ${attendance?.estado === 'no_asistio' ? 'active' : ''}" type="button" data-attendance-user="${escapeHtml(user.uid)}" data-attendance-site="${escapeHtml(site.id)}" data-attendance-state="no_asistio" aria-pressed="${attendance?.estado === 'no_asistio' ? 'true' : 'false'}">No asistió</button></div></div>
+                    ${attendanceControl}
                     <span class="attendance-check-status ${userChecks.length ? 'has-checks' : ''}">${escapeHtml(checkSummary)}</span>
                 </div>
             `;
@@ -607,8 +722,8 @@ function exportExcel() { const rows = [['Equipo', 'Código', 'Tipo', 'Sede', 'Á
 function exportPdf() { const rows = inventoryState.equipos.map(item => `<tr><td>${escapeHtml(item.nombre)}</td><td>${escapeHtml(item.codigo)}</td><td>${escapeHtml(item.estado)}</td><td>${escapeHtml(inventoryState.sedes.find(site => site.id === item.sedeId)?.nombre || '')}</td></tr>`).join(''); const reportWindow = window.open('', '_blank'); if (!reportWindow) return showToast('Permite ventanas emergentes para exportar el PDF.', 'warning'); reportWindow.document.write(`<html><head><title>Reporte de inventario</title><style>body{font-family:Arial;padding:30px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd5d0;padding:8px;text-align:left}th{background:#dce9e2}</style></head><body><h1>Reporte de inventario</h1><p>Generado el ${new Date().toLocaleString('es-CO')}</p><table><thead><tr><th>Equipo</th><th>Código</th><th>Estado</th><th>Sede</th></tr></thead><tbody>${rows}</tbody></table></body></html>`); reportWindow.document.close(); reportWindow.focus(); reportWindow.print(); }
 function detailLabel(key) { return { uid: 'UID', nombre: 'Nombre', email: 'Correo', roleId: 'Rol', estado: 'Estado', sedeIds: 'Sedes asignadas', sedeId: 'Sede', areaId: 'Área', tipoId: 'Tipo de equipo', codigo: 'Código', direccion: 'Dirección', serial: 'Número de serie', descripcion: 'Descripción', chequeable: 'Chequeable', imageUrl: 'Imagen', signatureUrl: 'Firma' }[key] || key; }
 function detailValue(key, value) { if (key === 'roleId') return roleName(value); if (key === 'sedeIds') return (value || []).map(id => inventoryState.sedes.find(site => site.id === id)?.nombre || id).join(', ') || 'Sin sedes asignadas'; if (key === 'sedeId') return inventoryState.sedes.find(site => site.id === value)?.nombre || 'Sin sede'; if (key === 'areaId') return inventoryState.areas.find(area => area.id === value)?.nombre || 'Sin área'; if (key === 'tipoId') return inventoryState.tipos.find(type => type.id === value)?.nombre || 'Sin tipo'; if (key === 'chequeable') return value ? 'Sí' : 'No'; return value; }
-function showDetail(entity, id) { const item = inventoryState[`${entity}s`].find(record => record.id === id); if (!item) return; const modal = document.getElementById('detailModal'); document.getElementById('detailModalTitle').textContent = item.nombre || item.email || 'Detalle'; const visibleEntries = Object.entries(item).filter(([key]) => !['id', 'datos', 'campos', 'imageUrl', 'signatureUrl'].includes(key) && !key.startsWith('custom_')); const storedCustom = item.datos && Object.keys(item.datos).length ? item.datos : Object.fromEntries(Object.entries(item).filter(([key]) => key.startsWith('custom_')).map(([key, value]) => [key.slice(7), value])); const customFields = entity === 'equipo' ? Object.entries(storedCustom).map(([fieldId, value]) => { const field = inventoryState.tipos.find(type => type.id === item.tipoId)?.campos?.find(candidate => candidate.id === fieldId); return [field?.nombre || fieldId, value]; }) : []; document.getElementById('detailModalBody').innerHTML = `<dl class="detail-list">${visibleEntries.map(([key, value]) => `<div><dt>${escapeHtml(detailLabel(key))}</dt><dd>${escapeHtml(detailValue(key, value))}</dd></div>`).join('')}${customFields.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>${item.imageUrl ? `<img class="equipment-image" src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.nombre)}">` : ''}${item.signatureUrl ? `<img class="equipment-image" src="${escapeHtml(item.signatureUrl)}" alt="Firma de ${escapeHtml(item.nombre || item.email)}">` : ''}<button class="btn-secondary close-modal" type="button">Cerrar</button>`; modal.classList.remove('hidden'); modal.querySelector('.close-modal').addEventListener('click', closeDetailModal); }
-function closeDetailModal() { const modal = document.getElementById('detailModal'); const form = modal.querySelector('.entity-form'); if (form?.dataset.returnParentId) { const parent = document.getElementById(form.dataset.returnParentId); if (parent) parent.appendChild(form); form.classList.add('hidden'); delete form.dataset.returnParentId; } modal.querySelector('.modal-card')?.classList.remove('checklist-modal-wide'); modal.classList.add('hidden'); document.getElementById('detailModalBody').innerHTML = ''; }
+function showDetail(entity, id) { const item = inventoryState[`${entity}s`].find(record => record.id === id); if (!item) return; const modal = document.getElementById('detailModal'); document.getElementById('detailModalTitle').textContent = item.nombre || item.email || 'Detalle'; const visibleEntries = Object.entries(item).filter(([key]) => !['id', 'datos', 'campos', 'imageUrl', 'signatureUrl'].includes(key) && !key.startsWith('custom_')); const storedCustom = item.datos && Object.keys(item.datos).length ? item.datos : Object.fromEntries(Object.entries(item).filter(([key]) => key.startsWith('custom_')).map(([key, value]) => [key.slice(7), value])); const typeFields = inventoryState.tipos.find(type => type.id === item.tipoId)?.campos || []; const customEntries = Object.entries(storedCustom); const customFields = entity === 'equipo' ? typeFields.map((field, index) => [field.nombre, storedCustom[field.id] ?? storedCustom[field.nombre] ?? customEntries.find(([key]) => key.toLowerCase() === field.nombre.toLowerCase())?.[1] ?? (customEntries.length === typeFields.length ? customEntries[index][1] : '')]) : []; document.getElementById('detailModalBody').innerHTML = `<dl class="detail-list">${visibleEntries.map(([key, value]) => `<div><dt>${escapeHtml(detailLabel(key))}</dt><dd>${escapeHtml(detailValue(key, value))}</dd></div>`).join('')}${customFields.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>${item.imageUrl ? `<a class="equipment-image-link" href="${escapeHtml(item.imageUrl)}" target="_blank" rel="noopener noreferrer"><img class="equipment-image" src="${escapeHtml(item.imageUrl)}" alt="Abrir imagen de ${escapeHtml(item.nombre)}"></a>` : ''}${item.signatureUrl ? `<a class="equipment-image-link" href="${escapeHtml(item.signatureUrl)}" target="_blank" rel="noopener noreferrer"><img class="equipment-image" src="${escapeHtml(item.signatureUrl)}" alt="Abrir firma de ${escapeHtml(item.nombre || item.email)}"></a>` : ''}<button class="btn-secondary close-modal" type="button">Cerrar</button>`; modal.classList.remove('hidden'); modal.querySelector('.close-modal').addEventListener('click', closeDetailModal); }
+function closeDetailModal() { const modal = document.getElementById('detailModal'); modal.querySelectorAll('.checklist-photo-input').forEach(input => clearChecklistPhotoPreview(input)); const form = modal.querySelector('.entity-form'); if (form?.dataset.returnParentId) { const parent = document.getElementById(form.dataset.returnParentId); if (parent) parent.appendChild(form); form.classList.add('hidden'); delete form.dataset.returnParentId; } modal.querySelector('.modal-card')?.classList.remove('checklist-modal-wide'); modal.classList.add('hidden'); document.getElementById('detailModalBody').innerHTML = ''; }
 function uploadToCloudinary(file) { if (!file) return Promise.resolve(''); if (!CLOUDINARY_CONFIG.cloudName || !CLOUDINARY_CONFIG.uploadPreset) return Promise.reject(new Error('Cloudinary aún no está configurado.')); const data = new FormData(); data.append('file', file); data.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset); return fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`, { method: 'POST', body: data }).then(response => { if (!response.ok) throw new Error('No se pudo subir la imagen.'); return response.json(); }).then(result => result.secure_url); }
 document.querySelectorAll('.inventory-tab').forEach(tab => tab.addEventListener('click', () => { document.querySelectorAll('.inventory-tab').forEach(item => item.classList.toggle('active', item === tab)); document.querySelectorAll('.inventory-panel').forEach(panel => panel.classList.toggle('active', panel.id === `inventory-panel-${tab.dataset.inventoryTab}`)); }));
 document.querySelectorAll('.inventory-filter').forEach(input => input.addEventListener('input', renderInventory));
@@ -637,12 +752,49 @@ document.getElementById('usersList').addEventListener('click', event => { const 
 document.getElementById('userSearch').addEventListener('input', renderUsers); document.getElementById('userRoleFilter').addEventListener('change', renderUsers); document.getElementById('userStatusFilter').addEventListener('change', renderUsers);
 document.getElementById('assignmentUser').addEventListener('change', renderAssignments); document.getElementById('saveAssignmentBtn').addEventListener('click', () => { const user = inventoryState.users.find(item => item.id === document.getElementById('assignmentUser').value); if (!user) return; user.sedeIds = [...document.querySelectorAll('#assignmentSites input:checked')].map(input => input.value); saveInventory(); renderAssignments(); showToast('Asignación guardada.', 'success'); });
 const reportView = document.getElementById('view-reportes');
+document.addEventListener('click', event => {
+    const photoLink = event.target.closest('.checklist-history-photo-link');
+    if (!photoLink?.href.startsWith('data:')) return;
+    event.preventDefault();
+    const imageWindow = window.open('about:blank', '_blank');
+    if (!imageWindow) return;
+    imageWindow.opener = null;
+    const image = imageWindow.document.createElement('img');
+    image.src = photoLink.href;
+    image.alt = photoLink.querySelector('img')?.alt || 'Foto del chequeo';
+    image.style.cssText = 'display:block;max-width:100%;max-height:100vh;margin:auto';
+    imageWindow.document.body.style.margin = '0';
+    imageWindow.document.body.appendChild(image);
+});
 if (reportView) {
+    document.getElementById('reportChequeoDate').addEventListener('change', event => {
+        reportChequeoDate = event.target.value || localDayKey(new Date());
+        renderReports();
+    });
+    document.getElementById('reportAttendanceDate').addEventListener('change', event => {
+        reportAttendanceDate = event.target.value || localDayKey(new Date());
+        renderReports();
+    });
     reportView.addEventListener('click', event => {
+        const reportTab = event.target.closest('[data-report-tab]');
+        if (reportTab) {
+            reportView.querySelectorAll('[data-report-tab]').forEach(tab => {
+                const active = tab === reportTab;
+                tab.classList.toggle('active', active);
+                tab.setAttribute('aria-selected', String(active));
+            });
+            reportView.querySelectorAll('[data-report-panel]').forEach(panel => {
+                panel.classList.toggle('active', panel.dataset.reportPanel === reportTab.dataset.reportTab);
+            });
+            return;
+        }
+
         const officeButton = event.target.closest('[data-report-area]');
         if (!officeButton) return;
         selectedReportAreaId = officeButton.dataset.reportArea;
         renderReports();
+        const area = inventoryState.areas.find(item => item.id === selectedReportAreaId);
+        if (area) showAreaReportModal(area);
     });
     reportView.addEventListener('click', saveAttendance);
 }
@@ -691,9 +843,9 @@ document.addEventListener('click', (e) => {
 /* ============================================================
    LOGOUT
    ============================================================ */
-logoutBtn.addEventListener('click', async () => {
-    logoutBtn.disabled = true;
-    logoutBtn.style.opacity = '0.6';
+async function handleLogout() {
+    const buttons = [logoutBtn, document.getElementById('logoutTopbarBtn')].filter(Boolean);
+    buttons.forEach(button => { button.disabled = true; button.style.opacity = '0.6'; });
     try {
         await signOut(auth);
         showToast('Sesión cerrada correctamente', 'success', 1500);
@@ -701,10 +853,11 @@ logoutBtn.addEventListener('click', async () => {
     } catch (error) {
         console.error('Error al cerrar sesión:', error);
         showToast('No se pudo cerrar sesión. Intenta de nuevo.', 'error');
-        logoutBtn.disabled = false;
-        logoutBtn.style.opacity = '';
+        buttons.forEach(button => { button.disabled = false; button.style.opacity = ''; });
     }
-});
+}
+logoutBtn.addEventListener('click', handleLogout);
+document.getElementById('logoutTopbarBtn').addEventListener('click', handleLogout);
 
 /* ============================================================
    PROTECCIÓN DE RUTA + CARGA DE DATOS

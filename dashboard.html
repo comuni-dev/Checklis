@@ -95,6 +95,9 @@
                         <span class="user-role" id="userRole">Usuario</span>
                     </div>
                     <div class="user-avatar" id="userAvatar">?</div>
+                    <button id="logoutTopbarBtn" class="logout-topbar-btn" type="button" aria-label="Cerrar sesión" title="Cerrar sesión">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    </button>
                 </div>
             </header>
 
@@ -123,8 +126,9 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                             </div>
                             <div class="stat-info">
-                                <span class="stat-label">Completados</span>
-                                <span class="stat-value">0</span>
+                                <span class="stat-label">Áreas revisadas</span>
+                                <span class="stat-value" id="dashboardChecksToday">0</span>
+                                <span class="stat-note">Con chequeo hoy</span>
                             </div>
                         </div>
 
@@ -133,8 +137,9 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                             </div>
                             <div class="stat-info">
-                                <span class="stat-label">Pendientes</span>
-                                <span class="stat-value">0</span>
+                                <span class="stat-label">Áreas sin registro</span>
+                                <span class="stat-value" id="dashboardAreasPending">0</span>
+                                <span class="stat-note">Chequeables hoy</span>
                             </div>
                         </div>
 
@@ -143,8 +148,9 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/></svg>
                             </div>
                             <div class="stat-info">
-                                <span class="stat-label">Usuarios</span>
-                                <span class="stat-value" id="statUsuarios">—</span>
+                                <span class="stat-label">Usuarios activos</span>
+                                <span class="stat-value" id="statUsuarios">0</span>
+                                <span class="stat-note">Con acceso habilitado</span>
                             </div>
                         </div>
                     </div>
@@ -186,29 +192,39 @@
 
                         <div class="info-card">
                             <div class="info-card-header">
-                                <h3>Próximamente</h3>
+                                <h3>Estado por sede</h3>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
                             </div>
-                            <ul class="roadmap">
-                                <li><span class="chip chip-soon">En desarrollo</span> Gestión de usuarios y roles</li>
-                                <li><span class="chip chip-soon">En desarrollo</span> Reportes y estadísticas</li>
-                                <li><span class="chip chip-plan">Planeado</span> Exportar a PDF / Excel</li>
-                                <li><span class="chip chip-plan">Planeado</span> Notificaciones en tiempo real</li>
-                            </ul>
+                            <p class="dashboard-panel-caption" id="dashboardCoverageDate">Cobertura de hoy</p>
+                            <div class="dashboard-site-summary" id="dashboardSiteSummary"></div>
                         </div>
                     </div>
+
+                    <section class="dashboard-activity info-card" aria-labelledby="dashboardActivityTitle">
+                        <div class="info-card-header">
+                            <div><h3 id="dashboardActivityTitle">Actividad reciente</h3><p>Últimos chequeos registrados</p></div>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                        </div>
+                        <div class="dashboard-recent-list" id="dashboardRecentChecks"></div>
+                    </section>
                 </div>
 
                 <!-- VISTA: REPORTES -->
                 <div class="view" id="view-reportes">
-                    <div class="section-heading"><div><span class="eyebrow">Control operativo</span><h2>Reportes de chequeos</h2><p>Consulta los registros por consultorio y cruza la asistencia diaria por sede.</p></div></div>
-                    <section class="report-section" aria-labelledby="reportOfficesTitle">
-                        <div class="report-section-heading"><h3 id="reportOfficesTitle">Chequeos por consultorio</h3><span>Selecciona un consultorio para ver su historial.</span></div>
-                        <div class="report-office-layout"><div id="reportOfficeList" class="report-office-list"></div><div id="reportOfficeDetail" class="report-office-detail"></div></div>
-                    </section>
-                    <section class="report-section" aria-labelledby="reportAttendanceTitle">
-                        <div class="report-section-heading"><h3 id="reportAttendanceTitle">Asistencia de inspectores</h3><span>Estado de hoy y chequeos registrados por sede.</span></div>
-                        <div id="reportAttendanceList" class="report-attendance-list"></div>
+                    <div class="section-heading"><div><span class="eyebrow">Control operativo</span><h2>Reportes</h2><p>Consulta chequeos y asistencia diaria por sede.</p></div></div>
+                    <section class="report-section" aria-label="Reportes operativos">
+                        <div class="report-tabs" role="tablist" aria-label="Tipo de reporte">
+                            <button class="report-tab active" id="reportTabChequeos" type="button" role="tab" aria-selected="true" aria-controls="reportPanelChequeos" data-report-tab="chequeos">Chequeos</button>
+                            <button class="report-tab" id="reportTabAsistencia" type="button" role="tab" aria-selected="false" aria-controls="reportPanelAsistencia" data-report-tab="asistencia">Asistencia</button>
+                        </div>
+                        <div class="report-panel active" id="reportPanelChequeos" role="tabpanel" aria-labelledby="reportTabChequeos" data-report-panel="chequeos">
+                            <div class="report-panel-toolbar"><div class="report-section-heading"><h3 id="reportOfficesTitle">Chequeos por consultorio</h3><span>Selecciona un consultorio para ver sus chequeos de la fecha elegida.</span></div><label class="report-date-filter">Fecha<input id="reportChequeoDate" type="date" aria-label="Filtrar chequeos por fecha"></label></div>
+                            <div class="report-office-layout"><div id="reportOfficeList" class="report-office-list"></div></div>
+                        </div>
+                        <div class="report-panel" id="reportPanelAsistencia" role="tabpanel" aria-labelledby="reportTabAsistencia" data-report-panel="asistencia">
+                            <div class="report-panel-toolbar"><div class="report-section-heading"><h3 id="reportAttendanceTitle">Asistencia de inspectores</h3><span id="reportAttendanceDateLabel">Registro del día</span></div><label class="report-date-filter">Fecha<input id="reportAttendanceDate" type="date" aria-label="Consultar asistencia por fecha"></label></div>
+                            <div id="reportAttendanceList" class="report-attendance-list"></div>
+                        </div>
                     </section>
                 </div>
 
